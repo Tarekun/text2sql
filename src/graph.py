@@ -6,7 +6,8 @@ from typing import Literal
 from typing_extensions import TypedDict, Annotated
 from src.tools import tools_dict
 from src.llm_backend import get_llm
-from src.utils import get_user_question, run_sql_query, get_relevant_table_schemas
+from src.utils import get_user_question
+from src.db import get_table_metadata, run_sql_query
 
 
 class MessagesState(TypedDict):
@@ -36,7 +37,7 @@ Fetched data:
 def node_generate_sql(state: MessagesState):
     llm = get_llm()
     user_query = get_user_question(state)
-    schema_context = get_relevant_table_schemas(user_query)
+    schema_context = get_table_metadata(user_query)
     system_prompt = SQL_GENERATION_SYSTEM_PROMPT.format(schema=schema_context)
 
     messages = [
@@ -56,46 +57,44 @@ def node_generate_sql(state: MessagesState):
 
 def node_execute_sql(state: MessagesState):
     # Extract SQL from last AI message
-    # last_message = state["messages"][-1]
-    # if last_message.type != "ai":
-    #     raise ValueError("Expected last message to be from AI")
-    # sql_text = last_message.content
-    # if isinstance(sql_text, list):
-    #     sql_text = "".join(block for block in sql_text if isinstance(block, str))
+    last_message = state["messages"][-1]
+    if last_message.type != "ai":
+        raise ValueError("Expected last message to be from AI")
+    sql_text = last_message.content
+    if isinstance(sql_text, list):
+        sql_text = "".join(block for block in sql_text if isinstance(block, str))
 
-    sql_text = "SELECT * FROM gold.indirizzi LIMIT 100"
-    # try:
-    rows, schema = run_sql_query(sql_text)
+    try:
+        rows, schema = run_sql_query(sql_text)
 
-    # Convert to readable format
-    if not rows:
-        query_result_string = "Query returned no results."
-    else:
-        # Simple tabular format: header + rows
-        column_names = [col.name for col in schema]  # type:ignore
-        header = "\t".join(column_names)
-        values = ""
-        for row in rows:
-            values += "\t".join([str(cell) for cell in row])
-            values += "\n"
-        query_result_string = f"{header}\n{values}"
+        # Convert to readable format
+        if not rows:
+            query_result_string = "Query returned no results."
+        else:
+            # Simple tabular format: header + rows
+            column_names = [col.name for col in schema]  # type:ignore
+            header = "\t".join(column_names)
+            values = ""
+            for row in rows:
+                values += "\t".join([str(cell) for cell in row])
+                values += "\n"
+            query_result_string = f"{header}\n{values}"
 
-    return {
-        "messages": [
-            ToolMessage(content=query_result_string, tool_call_id="sql_execution")
-        ]
-    }
+        return {
+            "messages": [
+                ToolMessage(content=query_result_string, tool_call_id="sql_execution")
+            ]
+        }
 
-
-# except Exception as e:
-#     return {
-#         "messages": [
-#             ToolMessage(
-#                 content=f"BigQuery execution error: {str(e)}",
-#                 tool_call_id="sql_execution",
-#             )
-#         ]
-#     }
+    except Exception as e:
+        return {
+            "messages": [
+                ToolMessage(
+                    content=f"BigQuery execution error: {str(e)}",
+                    tool_call_id="sql_execution",
+                )
+            ]
+        }
 
 
 def node_final_answer(state: MessagesState):

@@ -956,6 +956,7 @@ dependencies = [
     { name = "langchain" },
     { name = "langchain-google-genai" },
     { name = "langgraph" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
@@ -964,6 +965,7 @@ requires-dist = [
     { name = "langchain", specifier = ">=1.2.3" },
     { name = "langchain-google-genai", specifier = ">=4.2.0" },
     { name = "langgraph", specifier = ">=1.0.6" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
 ]
 
 [[package]]
