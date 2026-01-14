@@ -21,3 +21,7 @@ def add(a: int, b: int) -> int:
         b: Second int
     """
     return a + b
+
+
+tool_list = [add, multiply]
+tools_dict = {tool.name: tool for tool in tool_list}

@@ -1,18 +1,25 @@
 from langgraph.graph import StateGraph, START
 from langchain.messages import HumanMessage
-from graph import *
+from src.graph import *
+from src.llm_backend import instantiate_llm
 
 
 def compile():
+    instantiate_llm()
     # Build workflow
     agent_builder = StateGraph(state_schema=MessagesState)
     # Add nodes
-    agent_builder.add_node("llm_call", llm_call)  # type:ignore
-    agent_builder.add_node("tool_node", tool_node)  # type:ignore
+    agent_builder.add_node("generate_sql", node_generate_sql)  # type:ignore
+    agent_builder.add_node("execute_sql", node_execute_sql)  # type:ignore
+    agent_builder.add_node("answer", node_final_answer)  # type:ignore
     # Add edges to connect nodes
-    agent_builder.add_edge(START, "llm_call")
-    agent_builder.add_conditional_edges("llm_call", should_continue, ["tool_node", END])
-    agent_builder.add_edge("tool_node", "llm_call")
+    agent_builder.add_edge(START, "generate_sql")
+    agent_builder.add_edge("generate_sql", "execute_sql")
+    agent_builder.add_edge("execute_sql", "answer")
+    agent_builder.add_edge("answer", END)
+    # agent_builder.add_conditional_edges(
+    #     "generate_sql", should_continue, ["tool_node", END]
+    # )
 
     # Compile the agent
     agent = agent_builder.compile()
