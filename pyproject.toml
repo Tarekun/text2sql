@@ -6,5 +6,6 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "langchain>=1.2.3",
+    "langchain-google-genai>=4.2.0",
     "langgraph>=1.0.6",
 ]
