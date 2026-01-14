@@ -9,16 +9,21 @@ def compile():
     # Build workflow
     agent_builder = StateGraph(state_schema=MessagesState)
     # Add nodes
-    agent_builder.add_node("generate_sql", node_generate_sql)  # type:ignore
-    agent_builder.add_node("execute_sql", node_execute_sql)  # type:ignore
-    agent_builder.add_node("answer", node_final_answer)  # type:ignore
+    agent_builder.add_node(NODE_GENERATE_NAME, node_generate_sql)  # type:ignore
+    agent_builder.add_node(NODE_EXECUTE_NAME, node_execute_sql)  # type:ignore
+    agent_builder.add_node(NODE_ANSWER_NAME, node_final_answer)  # type:ignore
     # Add edges to connect nodes
-    agent_builder.add_edge(START, "generate_sql")
-    agent_builder.add_edge("generate_sql", "execute_sql")
-    agent_builder.add_edge("execute_sql", "answer")
-    agent_builder.add_edge("answer", END)
+    agent_builder.add_edge(START, NODE_GENERATE_NAME)
+    agent_builder.add_edge(NODE_GENERATE_NAME, NODE_EXECUTE_NAME)
+    agent_builder.add_conditional_edges(
+        NODE_EXECUTE_NAME,
+        edge_execution_success_check,
+        [NODE_ANSWER_NAME, NODE_GENERATE_NAME],
+    )
+    agent_builder.add_edge(NODE_EXECUTE_NAME, NODE_ANSWER_NAME)
+    agent_builder.add_edge(NODE_ANSWER_NAME, END)
     # agent_builder.add_conditional_edges(
-    #     "generate_sql", should_continue, ["tool_node", END]
+    #     NODE_GENERATE_NAME, should_continue, ["tool_node", END]
     # )
 
     # Compile the agent

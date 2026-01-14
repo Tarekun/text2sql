@@ -14,3 +14,11 @@ def get_user_question(state) -> str:
         raise ValueError("No human message found in state")
 
     return user_query
+
+
+def content_as_string(message) -> str:
+    content = message.content
+    if isinstance(content, list):
+        content = "".join(block for block in content if isinstance(block, str))
+
+    return content

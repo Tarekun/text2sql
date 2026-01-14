@@ -36,25 +36,18 @@ def _validate_query(query: str) -> str:
 
 
 def run_sql_query(query: str) -> list[Row]:
-    if not isinstance(query, str):
-        raise TypeError(f"Expected SQL as string, got {type(query)}")
     query = _validate_query(query)
+    job_config = bigquery.QueryJobConfig(
+        use_query_cache=True,
+        maximum_bytes_billed=100 * 1024 * 1024,  # 100 MB cap
+    )
+    client = bigquery.Client(project="soges-group-data-platform")
+    # client = bigquery.Client(project="formazione-danieletarek-iaisy")
+    query_job = client.query(query, job_config=job_config, timeout=30.0)
+    print(f"running sql query {query}")
+    result = query_job.result()
 
-    try:
-        job_config = bigquery.QueryJobConfig(
-            use_query_cache=True,
-            maximum_bytes_billed=100 * 1024 * 1024,  # 100 MB cap
-        )
-        client = bigquery.Client(project="soges-group-data-platform")
-        # client = bigquery.Client(project="formazione-danieletarek-iaisy")
-        query_job = client.query(query, job_config=job_config, timeout=30.0)
-        print(f"running sql query {query}")
-        result = query_job.result()
-
-        return list(result), result.schema  # type:ignore
-    except Exception as e:
-        print("failed to fetch")
-        return [], []  # type:ignore
+    return list(result), result.schema  # type:ignore
 
 
 def gcp_pull_metadata(project_id: str, datasets: list[str] | None = None) -> None:

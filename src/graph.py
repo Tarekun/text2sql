@@ -1,4 +1,10 @@
-from langchain.messages import ToolMessage, SystemMessage, AnyMessage, AIMessage
+from langchain.messages import (
+    ToolMessage,
+    SystemMessage,
+    AnyMessage,
+    AIMessage,
+    HumanMessage,
+)
 from langgraph.graph import END
 import operator
 import re
@@ -6,7 +12,7 @@ from typing import Literal
 from typing_extensions import TypedDict, Annotated
 from src.tools import tools_dict
 from src.llm_backend import get_llm
-from src.utils import get_user_question
+from src.utils import get_user_question, content_as_string
 from src.db import get_table_metadata, run_sql_query
 
 
@@ -33,6 +39,10 @@ Fetched data:
 {data}
 """
 
+NODE_GENERATE_NAME = "generate_sql"
+NODE_EXECUTE_NAME = "execute_sql"
+NODE_ANSWER_NAME = "answer"
+
 
 def node_generate_sql(state: MessagesState):
     llm = get_llm()
@@ -41,22 +51,38 @@ def node_generate_sql(state: MessagesState):
     system_prompt = SQL_GENERATION_SYSTEM_PROMPT.format(schema=schema_context)
 
     messages = [
-        ("system", system_prompt),
-        ("human", user_query),
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_query),
     ]
+    last_msg = state["messages"][-1]
+    if isinstance(last_msg, ToolMessage) and "SQL execution error" in last_msg.content:
+        print("appending error context for retry")
+        # add to context the failed query
+        messages.append(AIMessage(content=state["messages"][-2].content))
+        # add to context the error message
+        messages.append(last_msg)
+        messages.append(
+            HumanMessage(
+                content="The above SQL query failed. Please analyze the error and generate a corrected query."
+            )
+        )
+
     content = llm.invoke(messages).content[0]["text"]  # type:ignore
-    print(f"sql generation response:")
-    print(content)
     if isinstance(content, list):
         sql_text = "".join(block for block in content if isinstance(block, str))
     else:
         sql_text = str(content)
 
-    return {"messages": [AIMessage(content=sql_text.strip())]}
+    return {
+        "messages": [
+            AIMessage(
+                content=sql_text.strip(),
+            )
+        ]
+    }
 
 
 def node_execute_sql(state: MessagesState):
-    # Extract SQL from last AI message
     last_message = state["messages"][-1]
     if last_message.type != "ai":
         raise ValueError("Expected last message to be from AI")
@@ -66,19 +92,13 @@ def node_execute_sql(state: MessagesState):
 
     try:
         rows, schema = run_sql_query(sql_text)
-
-        # Convert to readable format
-        if not rows:
-            query_result_string = "Query returned no results."
-        else:
-            # Simple tabular format: header + rows
-            column_names = [col.name for col in schema]  # type:ignore
-            header = "\t".join(column_names)
-            values = ""
-            for row in rows:
-                values += "\t".join([str(cell) for cell in row])
-                values += "\n"
-            query_result_string = f"{header}\n{values}"
+        column_names = [col.name for col in schema]
+        header = "\t".join(column_names)
+        values = ""
+        for row in rows:
+            values += "\t".join([str(cell) for cell in row])
+            values += "\n"
+        query_result_string = f"{header}\n{values}"
 
         return {
             "messages": [
@@ -90,7 +110,7 @@ def node_execute_sql(state: MessagesState):
         return {
             "messages": [
                 ToolMessage(
-                    content=f"BigQuery execution error: {str(e)}",
+                    content=f"SQL execution error: {str(e)}",
                     tool_call_id="sql_execution",
                 )
             ]
@@ -103,7 +123,6 @@ def node_final_answer(state: MessagesState):
     sql_result = None
     for msg in reversed(state["messages"]):
         if msg.type == "tool" and msg.tool_call_id == "sql_execution":
-            print("found query result:")
             print(msg.content)
             print()
             sql_result = msg.content
@@ -114,6 +133,17 @@ def node_final_answer(state: MessagesState):
 
     response = llm.invoke(messages).content
     return {"messages": [AIMessage(content=response)]}
+
+
+def edge_execution_success_check(state: MessagesState) -> str:
+    last_message = content_as_string(state["messages"][-1])
+    print(f"last message is\n{last_message}")
+    if "SQL execution error" in last_message:
+        print("regenerating")
+        return NODE_GENERATE_NAME
+    else:
+        print("going to final answer")
+        return NODE_ANSWER_NAME
 
 
 def tool_node(state: dict):
