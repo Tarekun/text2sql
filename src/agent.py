@@ -34,4 +34,4 @@ def compile():
 
 def call(agent, message: str):
     messages = agent.invoke({"messages": [HumanMessage(content=message)]})
-    return messages["messages"][-1]
+    return content_as_string(messages["messages"][-1])

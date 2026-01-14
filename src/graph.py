@@ -18,6 +18,7 @@ from src.db import get_table_metadata, run_sql_query
 
 class MessagesState(TypedDict):
     messages: Annotated[list[AnyMessage], operator.add]
+    retry_count: int
 
 
 SQL_GENERATION_SYSTEM_PROMPT = """You are a database expert. Generate a valid SQL query to fetch data useful to answer the original user question.
@@ -43,6 +44,9 @@ NODE_GENERATE_NAME = "generate_sql"
 NODE_EXECUTE_NAME = "execute_sql"
 NODE_ANSWER_NAME = "answer"
 
+EXECUTION_ERROR_PREFIX = "SQL execution error:"
+MAX_RETRIES = 5
+
 
 def node_generate_sql(state: MessagesState):
     llm = get_llm()
@@ -54,8 +58,8 @@ def node_generate_sql(state: MessagesState):
         SystemMessage(content=system_prompt),
         HumanMessage(content=user_query),
     ]
-    last_msg = state["messages"][-1]
-    if isinstance(last_msg, ToolMessage) and "SQL execution error" in last_msg.content:
+    if _did_last_execution_fail(state):
+        last_msg = state["messages"][-1]
         print("appending error context for retry")
         # add to context the failed query
         messages.append(AIMessage(content=state["messages"][-2].content))
@@ -66,6 +70,9 @@ def node_generate_sql(state: MessagesState):
                 content="The above SQL query failed. Please analyze the error and generate a corrected query."
             )
         )
+        retry_count = state.get("retry_count", 0) + 1
+    else:
+        retry_count = 0
 
     content = llm.invoke(messages).content[0]["text"]  # type:ignore
     if isinstance(content, list):
@@ -78,7 +85,8 @@ def node_generate_sql(state: MessagesState):
             AIMessage(
                 content=sql_text.strip(),
             )
-        ]
+        ],
+        "retry_count": retry_count,
     }
 
 
@@ -110,7 +118,7 @@ def node_execute_sql(state: MessagesState):
         return {
             "messages": [
                 ToolMessage(
-                    content=f"SQL execution error: {str(e)}",
+                    content=f"{EXECUTION_ERROR_PREFIX} {str(e)}",
                     tool_call_id="sql_execution",
                 )
             ]
@@ -136,36 +144,13 @@ def node_final_answer(state: MessagesState):
 
 
 def edge_execution_success_check(state: MessagesState) -> str:
-    last_message = content_as_string(state["messages"][-1])
-    print(f"last message is\n{last_message}")
-    if "SQL execution error" in last_message:
-        print("regenerating")
+    current_retries = state.get("retry_count", 0)
+    if _did_last_execution_fail(state) and current_retries < MAX_RETRIES:
         return NODE_GENERATE_NAME
     else:
-        print("going to final answer")
         return NODE_ANSWER_NAME
 
 
-def tool_node(state: dict):
-    """Performs the tool call"""
-
-    result = []
-    for tool_call in state["messages"][-1].tool_calls:
-        tool = tools_dict[tool_call["name"]]
-        observation = tool.invoke(tool_call["args"])
-        result.append(ToolMessage(content=observation, tool_call_id=tool_call["id"]))
-    return {"messages": result}
-
-
-def should_continue(state: MessagesState) -> Literal["tool_node", END]:  # type:ignore
-    """Decide if we should continue the loop or stop based upon whether the LLM made a tool call"""
-
-    messages = state["messages"]
-    last_message = messages[-1]
-
-    # If the LLM makes a tool call, then perform an action
-    if last_message.tool_calls:  # type:ignore
-        return "tool_node"
-
-    # Otherwise, we stop (reply to the user)
-    return END
+def _did_last_execution_fail(state: MessagesState) -> bool:
+    last_message = content_as_string(state["messages"][-1])
+    return EXECUTION_ERROR_PREFIX in last_message
