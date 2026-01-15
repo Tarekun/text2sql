@@ -5,15 +5,12 @@ from langchain.messages import (
     AIMessage,
     HumanMessage,
 )
-from langgraph.graph import END
 import operator
-import re
-from typing import Literal
 from typing_extensions import TypedDict, Annotated
-from src.tools import tools_dict
 from src.llm_backend import get_llm
 from src.utils import get_user_question, content_as_string
 from src.db import get_table_metadata, run_sql_query
+from src.prompts import prompts, Prompts
 
 
 class MessagesState(TypedDict):
@@ -21,38 +18,20 @@ class MessagesState(TypedDict):
     retry_count: int
 
 
-SQL_GENERATION_SYSTEM_PROMPT = """You are a database expert. Generate a valid SQL query to fetch data useful to answer the original user question.
-- Use only tables and columns from the schema below.
-- Do not use CREATE, DROP, INSERT, UPDATE, DELETE, or any statement with side effects.
-- Only output the SQL query. No explanations, no markdown, no comments.
-- Always include a LIMIT 100 clause unless aggregation makes it unnecessary.
-
-Schema:
-{schema}
-"""
-
-FINAL_ANSWER_PROMPT = """
-You are a domain expert of data supporting exploratory investigations on databases.
-You are provided some prefetched data from the underlying database containing info to answer the user question.
-Stay focused on the user question and answer in a way that is grounded on the data available
-
-Fetched data:
-{data}
-"""
-
 NODE_GENERATE_NAME = "generate_sql"
 NODE_EXECUTE_NAME = "execute_sql"
 NODE_ANSWER_NAME = "answer"
 
 EXECUTION_ERROR_PREFIX = "SQL execution error:"
 MAX_RETRIES = 5
+local_prompts: Prompts = prompts["it"]
 
 
 def node_generate_sql(state: MessagesState):
     llm = get_llm()
     user_query = get_user_question(state)
     schema_context = get_table_metadata(user_query)
-    system_prompt = SQL_GENERATION_SYSTEM_PROMPT.format(schema=schema_context)
+    system_prompt = local_prompts.sql_generation.format(schema=schema_context)
 
     messages = [
         SystemMessage(content=system_prompt),
@@ -131,11 +110,9 @@ def node_final_answer(state: MessagesState):
     sql_result = None
     for msg in reversed(state["messages"]):
         if msg.type == "tool" and msg.tool_call_id == "sql_execution":
-            print(msg.content)
-            print()
             sql_result = msg.content
             break
-    system_prompt = FINAL_ANSWER_PROMPT.format(data=sql_result)
+    system_prompt = local_prompts.final_answer.format(data=sql_result)
 
     messages = [("system", system_prompt), ("human", user_query)]
 

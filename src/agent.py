@@ -1,10 +1,11 @@
-from langgraph.graph import StateGraph, START
+from langgraph.graph import StateGraph, START, END
+from langgraph.graph.state import CompiledStateGraph
 from langchain.messages import HumanMessage
 from src.graph import *
 from src.llm_backend import instantiate_llm
 
 
-def compile():
+def compile() -> CompiledStateGraph:
     instantiate_llm()
     # Build workflow
     agent_builder = StateGraph(state_schema=MessagesState)
@@ -32,6 +33,6 @@ def compile():
     return agent
 
 
-def call(agent, message: str):
+def call(agent: CompiledStateGraph, message: str):
     messages = agent.invoke({"messages": [HumanMessage(content=message)]})
     return content_as_string(messages["messages"][-1])

@@ -1,9 +1,3 @@
-from google.cloud import bigquery
-from google.cloud.bigquery.table import Row
-import re
-import yaml
-
-
 def get_user_question(state) -> str:
     user_query = None
     for msg in reversed(state["messages"]):
@@ -17,8 +11,12 @@ def get_user_question(state) -> str:
 
 
 def content_as_string(message) -> str:
+    """Takes a langchain message and returns the content string"""
+
     content = message.content
     if isinstance(content, list):
-        content = "".join(block for block in content if isinstance(block, str))
+        content = "".join(block["text"] for block in content)
+    elif isinstance(content, dict):
+        content = message.content["text"]
 
     return content
