@@ -10,9 +10,10 @@ from langchain.messages import (
 import operator
 from typing_extensions import TypedDict, Annotated
 from src.agent.llm_backend import get_llm, instantiate_llm
-from src.utils import get_user_question, content_as_string
+from src.config import Config
 from src.db import get_table_metadata, run_sql_query
 from src.prompts import prompts, Prompts
+from src.utils import get_user_question, content_as_string
 
 
 class MessagesState(TypedDict):
@@ -25,13 +26,18 @@ NODE_EXECUTE_NAME = "execute_sql"
 NODE_ANSWER_NAME = "answer"
 
 EXECUTION_ERROR_PREFIX = "SQL execution error:"
-MAX_RETRIES = 5
+max_retries: int = 5
 local_prompts: Prompts = prompts["it"]
 
 
 ################################### GRAPH DEFINITION
-def compile() -> CompiledStateGraph:
-    instantiate_llm()
+def compile(config: Config) -> CompiledStateGraph:
+    global max_retries
+
+    instantiate_llm(config)
+    _set_prompt_language(config)
+    max_retries = config.max_retries
+
     # Build workflow
     agent_builder = StateGraph(state_schema=MessagesState)
     # Add nodes
@@ -48,9 +54,6 @@ def compile() -> CompiledStateGraph:
     )
     agent_builder.add_edge(NODE_EXECUTE_NAME, NODE_ANSWER_NAME)
     agent_builder.add_edge(NODE_ANSWER_NAME, END)
-    # agent_builder.add_conditional_edges(
-    #     NODE_GENERATE_NAME, should_continue, ["tool_node", END]
-    # )
 
     # Compile the agent
     agent = agent_builder.compile()
@@ -162,7 +165,7 @@ def _node_final_answer(state: MessagesState):
 
 def _edge_execution_success_check(state: MessagesState) -> str:
     current_retries = state.get("retry_count", 0)
-    if _did_last_execution_fail(state) and current_retries < MAX_RETRIES:
+    if _did_last_execution_fail(state) and current_retries < max_retries:
         return NODE_GENERATE_NAME
     else:
         return NODE_ANSWER_NAME
@@ -175,6 +178,15 @@ def _edge_execution_success_check(state: MessagesState) -> str:
 def _did_last_execution_fail(state: MessagesState) -> bool:
     last_message = content_as_string(state["messages"][-1])
     return EXECUTION_ERROR_PREFIX in last_message
+
+
+def _set_prompt_language(config: Config):
+    global local_prompts
+
+    try:
+        local_prompts = prompts[config.language]
+    except KeyError:
+        raise ValueError(f"Prompt language {config.language} not currently supported")
 
 
 ################################### HELPER FUNCTIONS
