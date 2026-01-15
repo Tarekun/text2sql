@@ -20,18 +20,22 @@ from src.utils import get_user_question, content_as_string
 
 class MessagesState(TypedDict):
     messages: Annotated[list[AnyMessage], operator.add]
+    metadata: str
+    fetched_data: str
     retry_count: int
+    sufficient_context: bool
 
 
 NODE_GENERATE_NAME = "generate_sql"
 NODE_EXECUTE_NAME = "execute_sql"
 NODE_ANSWER_NAME = "answer"
 NODE_TOOLS_NAME = "tools"
-NODE_RETRYMNG_NAME = "retry_management"
+NODE_POST_TOOL_NAME = "tool_state_mngt"
+NODE_SUFFEVAL_NAME = "context_eval"
 
 EXECUTION_ERROR_PREFIX = "SQL execution error:"
 max_retries: int = 5
-local_prompts: Prompts = prompts["it"]
+local_prompts: Prompts = prompts["en"]
 
 
 ################################### GRAPH DEFINITION
@@ -46,20 +50,28 @@ def compile(config: Config) -> CompiledStateGraph:
     agent_builder = StateGraph(state_schema=MessagesState)
     # Add nodes
     agent_builder.add_node(NODE_GENERATE_NAME, _node_generate_sql)
-    agent_builder.add_node(NODE_RETRYMNG_NAME, _node_check_tool_result)
     agent_builder.add_node(NODE_TOOLS_NAME, ToolNode(tool_list))
+    agent_builder.add_node(NODE_POST_TOOL_NAME, _node_post_tool)
     agent_builder.add_node(NODE_ANSWER_NAME, _node_final_answer)
+    agent_builder.add_node(NODE_SUFFEVAL_NAME, _node_sufficiency_evaluation)
     # Add edges to connect nodes
     agent_builder.add_edge(START, NODE_GENERATE_NAME)
     agent_builder.add_conditional_edges(
         NODE_GENERATE_NAME, _edge_skip_execution, [NODE_TOOLS_NAME, NODE_ANSWER_NAME]
     )
-    agent_builder.add_edge(NODE_TOOLS_NAME, NODE_RETRYMNG_NAME)
+    agent_builder.add_edge(NODE_TOOLS_NAME, NODE_POST_TOOL_NAME)
+    agent_builder.add_edge(NODE_POST_TOOL_NAME, NODE_SUFFEVAL_NAME)
     agent_builder.add_conditional_edges(
-        NODE_RETRYMNG_NAME,
-        _edge_execution_success_check,
+        NODE_SUFFEVAL_NAME,
+        _edge_sufficiency_evaluation,
         [NODE_GENERATE_NAME, NODE_ANSWER_NAME],
     )
+    # agent_builder.add_edge(NODE_TOOLS_NAME, NODE_POST_TOOL_NAME)
+    # agent_builder.add_conditional_edges(
+    #     NODE_POST_TOOL_NAME,
+    #     _edge_execution_success_check,
+    #     [NODE_GENERATE_NAME, NODE_ANSWER_NAME],
+    # )
     agent_builder.add_edge(NODE_ANSWER_NAME, END)
 
     # Compile the agent
@@ -79,10 +91,23 @@ def call(agent: CompiledStateGraph, message: str):
 ################################### GRAPH COMPONENTS
 def _node_generate_sql(state: MessagesState):
     print("node generate")
+    if state.get("retry_count", 0) > max_retries:
+        print("Query generation failed too many times. Skipping")
+        return {
+            "messages": [
+                HumanMessage(content="Query generation failed too many times. Skipping")
+            ],
+        }
+
     llm = get_llm()
     user_query = get_user_question(state)
-    schema_context = get_table_metadata(user_query)
-    system_prompt = local_prompts.sql_generation.format(schema=schema_context)
+    metadata = state.get("metadata", "No metadata fetched yet")
+    data = state.get("fetched_data", "No rows fetched yet")
+    system_prompt = local_prompts.sql_generation.format(
+        metadata=metadata,
+        data=data,
+        db_kind="BigQuery",
+    )
 
     messages = [
         SystemMessage(content=system_prompt),
@@ -107,40 +132,61 @@ def _node_generate_sql(state: MessagesState):
     }
 
 
-def _node_check_tool_result(state: MessagesState):
+def _node_post_tool(state: MessagesState):
     print("node check tool result")
+    retry = 0
     if _did_last_execution_fail(state):
         print("\tfailed, increase retry")
-        return {"retry_count": state.get("retry_count", 0) + 1}
-    else:
-        print("\tsuccess go forward")
-        return {"retry_count": 0}
+        retry = state.get("retry_count", 0) + 1
+
+    return {
+        "retry_count": retry,
+        "metadata": _get_fetched_metadata(state),
+        "fetched_data": _get_fetched_data(state),
+    }
 
 
 def _node_final_answer(state: MessagesState):
     print("node final answer")
-    llm = get_llm()
+    llm = get_llm(with_tools=False)
     user_query = get_user_question(state)
-    sql_result = None
-    for msg in reversed(state["messages"]):
-        if msg.type == "tool":
-            sql_result = content_as_string(msg)
-            break
+    metadata = state.get("metadata", "No metadata fetched yet")
+    sql_result = state.get("fetched_data", "No rows fetched yet")
 
     if sql_result is None:
-        print("MISSING DATA")
+        print("MISSING SQL RESULT")
+    if metadata is None:
+        print("MISSING TABLE METADATA")
     system_prompt = local_prompts.final_answer.format(
-        data=(
-            sql_result
-            if sql_result is not None
-            else "Data is missing for unknown reason. Notify user"
-        )
+        data=sql_result,
+        metadata=metadata,
     )
-
     messages = [("system", system_prompt), ("human", user_query)]
 
-    response = llm.invoke(messages).content
-    return {"messages": [AIMessage(content=response)]}
+    response = llm.invoke(messages)
+    return {"messages": [response]}
+
+
+def _node_sufficiency_evaluation(state: MessagesState):
+    llm = get_llm()
+    user_query = get_user_question(state)
+    metadata = state.get("metadata", "No metadata fetched yet")
+    data = state.get("fetched_data", "No rows fetched yet")
+    system_prompt = local_prompts.evaluate_context.format(
+        metadata=metadata, data=data, user_query=user_query
+    )
+    print(system_prompt)
+    response = llm.invoke(
+        [
+            SystemMessage(
+                content="You are a strict evaluator. Respond only with DATA IS EXAUSTIVE or MISSING DATA."
+            ),
+            HumanMessage(content=system_prompt),
+        ]
+    )
+    response = content_as_string(response)
+    print(f"risposta {response}")
+    return {"sufficient_context": "DATA IS EXAUSTIVE" in response.upper()}
 
 
 def _edge_skip_execution(state: MessagesState) -> str:
@@ -156,14 +202,11 @@ def _edge_skip_execution(state: MessagesState) -> str:
         return NODE_ANSWER_NAME
 
 
-def _edge_execution_success_check(state: MessagesState) -> str:
-    current_retries = state.get("retry_count", 0)
-    if _did_last_execution_fail(state) and current_retries < max_retries:
-        print("edge retry generation")
-        return NODE_GENERATE_NAME
-    else:
-        print("edge goto final answer")
+def _edge_sufficiency_evaluation(state: MessagesState) -> str:
+    if state["sufficient_context"]:
         return NODE_ANSWER_NAME
+    else:
+        return NODE_GENERATE_NAME
 
 
 ################################### GRAPH COMPONENTS
@@ -182,6 +225,20 @@ def _set_prompt_language(config: Config):
         local_prompts = prompts[config.language]
     except KeyError:
         raise ValueError(f"Prompt language {config.language} not currently supported")
+
+
+def _get_fetched_metadata(state: MessagesState) -> str | None:
+    for msg in reversed(state["messages"]):
+        if msg.type == "tool" and msg.name == "fetch_metadata":
+            return content_as_string(msg)
+    return None
+
+
+def _get_fetched_data(state: MessagesState) -> str | None:
+    for msg in reversed(state["messages"]):
+        if msg.type == "tool" and msg.name == "execute_sql":
+            return content_as_string(msg)
+    return None
 
 
 ################################### HELPER FUNCTIONS

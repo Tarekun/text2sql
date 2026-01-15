@@ -5,3 +5,4 @@ from dataclasses import dataclass
 class Prompts:
     sql_generation: str
     final_answer: str
+    evaluate_context: str

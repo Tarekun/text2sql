@@ -142,6 +142,7 @@ def get_table_metadata(user_question=""):
             table_desc = table.get("description", "(Description not available)")
             schema_str += f"Table: {full_table_name}\n"
             schema_str += f"\tDescription: {table_desc}\n"
+            schema_str += f"\tByte usage: {table['others']['num_bytes']}\n"
             schema_str += "\tColumns:\n"
 
             for column in table.get("columns", []):

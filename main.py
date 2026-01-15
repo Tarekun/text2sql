@@ -2,6 +2,7 @@ from langchain.messages import HumanMessage
 from src.agent.graph import compile, call
 from src.config import read_config
 from src.db import gcp_pull_metadata, get_table_metadata
+from src.utils import print_graph
 import argparse
 
 
@@ -14,22 +15,24 @@ if __name__ == "__main__":
 
     config = read_config(args.config)
     agent = compile(config)
+    print_graph(agent)
 
     # messages = agent.invoke(
     #     {
     #         "messages": [
     #             HumanMessage(
-    #                 content="i need to know TOTAL average daily income,in year 2025, grouped by STRUTTURA. underlying db is BigQuery so never use function STRFTIME as its not supported"
+    #                 content="find me all the addresses (INDIRIZZI) of the buildings (STRUTTURA) tracked on the db"
     #             )
     #         ]
     #     }
     # )
     # print()
     # print("risultato")
-    # for m in messages["messages"]:
-    #     print(m.__class__)
-    #     print(m.content)
-    #     print()
+    # # for m in messages["messages"]:
+    # m = messages["messages"][-1]
+    # print(m.__class__)
+    # print(m)
+    # print()
 
     while True:
         question = input("> ")

@@ -22,4 +22,6 @@ Dati:
 {data}
 """
 
-it_prompts = Prompts(sql_generation=it_sql_generation, final_answer=it_final_answer)
+it_prompts = Prompts(
+    sql_generation=it_sql_generation, final_answer=it_final_answer, evaluate_context=""
+)

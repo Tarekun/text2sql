@@ -16,12 +16,14 @@ def instantiate_llm(config: Config):
         # project="formazione-danieletarek-iaisy",
         # location="us-central1",
     )
-    model_with_tools = model.bind_tools(tool_list)
-    _model = model_with_tools
+    # model_with_tools = model.bind_tools(tool_list)
+    # _model = model_with_tools
+    _model = model
 
     return get_llm()
 
 
-def get_llm() -> ChatGoogleGenerativeAI:
+def get_llm(with_tools: bool = True) -> ChatGoogleGenerativeAI:
     global _model
-    return _model  # type:ignore
+
+    return _model.bind_tools(tool_list) if with_tools else _model  # type:ignore

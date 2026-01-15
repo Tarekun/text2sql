@@ -20,3 +20,9 @@ def content_as_string(message) -> str:
         content = message.content["text"]
 
     return content
+
+
+def print_graph(compiled_graph):
+    png_bytes = compiled_graph.get_graph(xray=True).draw_mermaid_png()
+    with open("graph.png", "wb") as f:
+        f.write(png_bytes)
