@@ -1,3 +1,5 @@
+from langgraph.graph import StateGraph, START, END
+from langgraph.graph.state import CompiledStateGraph
 from langchain.messages import (
     ToolMessage,
     SystemMessage,
@@ -7,7 +9,7 @@ from langchain.messages import (
 )
 import operator
 from typing_extensions import TypedDict, Annotated
-from src.llm_backend import get_llm
+from src.agent.llm_backend import get_llm, instantiate_llm
 from src.utils import get_user_question, content_as_string
 from src.db import get_table_metadata, run_sql_query
 from src.prompts import prompts, Prompts
@@ -27,7 +29,45 @@ MAX_RETRIES = 5
 local_prompts: Prompts = prompts["it"]
 
 
-def node_generate_sql(state: MessagesState):
+################################### GRAPH DEFINITION
+def compile() -> CompiledStateGraph:
+    instantiate_llm()
+    # Build workflow
+    agent_builder = StateGraph(state_schema=MessagesState)
+    # Add nodes
+    agent_builder.add_node(NODE_GENERATE_NAME, _node_generate_sql)
+    agent_builder.add_node(NODE_EXECUTE_NAME, _node_execute_sql)
+    agent_builder.add_node(NODE_ANSWER_NAME, _node_final_answer)
+    # Add edges to connect nodes
+    agent_builder.add_edge(START, NODE_GENERATE_NAME)
+    agent_builder.add_edge(NODE_GENERATE_NAME, NODE_EXECUTE_NAME)
+    agent_builder.add_conditional_edges(
+        NODE_EXECUTE_NAME,
+        _edge_execution_success_check,
+        [NODE_ANSWER_NAME, NODE_GENERATE_NAME],
+    )
+    agent_builder.add_edge(NODE_EXECUTE_NAME, NODE_ANSWER_NAME)
+    agent_builder.add_edge(NODE_ANSWER_NAME, END)
+    # agent_builder.add_conditional_edges(
+    #     NODE_GENERATE_NAME, should_continue, ["tool_node", END]
+    # )
+
+    # Compile the agent
+    agent = agent_builder.compile()
+
+    return agent
+
+
+def call(agent: CompiledStateGraph, message: str):
+    messages = agent.invoke({"messages": [HumanMessage(content=message)]})
+    return content_as_string(messages["messages"][-1])
+
+
+################################### GRAPH DEFINITION
+
+
+################################### GRAPH COMPONENTS
+def _node_generate_sql(state: MessagesState):
     llm = get_llm()
     user_query = get_user_question(state)
     schema_context = get_table_metadata(user_query)
@@ -69,7 +109,7 @@ def node_generate_sql(state: MessagesState):
     }
 
 
-def node_execute_sql(state: MessagesState):
+def _node_execute_sql(state: MessagesState):
     last_message = state["messages"][-1]
     if last_message.type != "ai":
         raise ValueError("Expected last message to be from AI")
@@ -104,7 +144,7 @@ def node_execute_sql(state: MessagesState):
         }
 
 
-def node_final_answer(state: MessagesState):
+def _node_final_answer(state: MessagesState):
     llm = get_llm()
     user_query = get_user_question(state)
     sql_result = None
@@ -120,7 +160,7 @@ def node_final_answer(state: MessagesState):
     return {"messages": [AIMessage(content=response)]}
 
 
-def edge_execution_success_check(state: MessagesState) -> str:
+def _edge_execution_success_check(state: MessagesState) -> str:
     current_retries = state.get("retry_count", 0)
     if _did_last_execution_fail(state) and current_retries < MAX_RETRIES:
         return NODE_GENERATE_NAME
@@ -128,6 +168,13 @@ def edge_execution_success_check(state: MessagesState) -> str:
         return NODE_ANSWER_NAME
 
 
+################################### GRAPH COMPONENTS
+
+
+################################### HELPER FUNCTIONS
 def _did_last_execution_fail(state: MessagesState) -> bool:
     last_message = content_as_string(state["messages"][-1])
     return EXECUTION_ERROR_PREFIX in last_message
+
+
+################################### HELPER FUNCTIONS
