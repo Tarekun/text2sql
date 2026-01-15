@@ -5,10 +5,6 @@ from src.db import gcp_pull_metadata, get_table_metadata
 import argparse
 
 
-# gcp_pull_metadata("soges-group-data-platform", datasets=["gold"])
-# print(get_table_metadata())
-
-# question = "voglio sapere l'incasso TOTALE giornaliero medio, nell'anno 2025, diviso per struttura. il db sottostante è bigquery quindi non usare mai la funzione STRFTIME che non è supportata"
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process some arguments.")
     parser.add_argument(
@@ -18,6 +14,22 @@ if __name__ == "__main__":
 
     config = read_config(args.config)
     agent = compile(config)
+
+    # messages = agent.invoke(
+    #     {
+    #         "messages": [
+    #             HumanMessage(
+    #                 content="i need to know TOTAL average daily income,in year 2025, grouped by STRUTTURA. underlying db is BigQuery so never use function STRFTIME as its not supported"
+    #             )
+    #         ]
+    #     }
+    # )
+    # print()
+    # print("risultato")
+    # for m in messages["messages"]:
+    #     print(m.__class__)
+    #     print(m.content)
+    #     print()
 
     while True:
         question = input("> ")

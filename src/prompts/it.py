@@ -2,6 +2,7 @@ from src.prompts.prompt_schema import Prompts
 
 
 it_sql_generation = """Sei un esperto di database. Genera una query SQL valida per raccogliere dati utili a rispondere alla domanda dell'utente.
+Dopo aver generato la query DEVI chiamare il tool execute_sql per eseguirla.
 - Usa solo tabelle e colonne nello schema indicato sotto
 - Non utilizzare CREATE, DROP, INSERT, UPDATE, DELETE, o qualunque altro statemente con side effects
 - Genera soltanto la query SQL. Nessuna spiegazione, no markdown, no commenti

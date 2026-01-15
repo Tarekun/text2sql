@@ -44,7 +44,6 @@ def run_sql_query(query: str) -> list[Row]:
     client = bigquery.Client(project="soges-group-data-platform")
     # client = bigquery.Client(project="formazione-danieletarek-iaisy")
     query_job = client.query(query, job_config=job_config, timeout=30.0)
-    print(f"running sql query {query}")
     result = query_job.result()
 
     return list(result), result.schema  # type:ignore

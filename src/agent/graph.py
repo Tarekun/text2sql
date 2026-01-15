@@ -7,9 +7,11 @@ from langchain.messages import (
     AIMessage,
     HumanMessage,
 )
+from langgraph.prebuilt import ToolNode
 import operator
 from typing_extensions import TypedDict, Annotated
 from src.agent.llm_backend import get_llm, instantiate_llm
+from src.agent.tools import tool_list
 from src.config import Config
 from src.db import get_table_metadata, run_sql_query
 from src.prompts import prompts, Prompts
@@ -24,6 +26,8 @@ class MessagesState(TypedDict):
 NODE_GENERATE_NAME = "generate_sql"
 NODE_EXECUTE_NAME = "execute_sql"
 NODE_ANSWER_NAME = "answer"
+NODE_TOOLS_NAME = "tools"
+NODE_RETRYMNG_NAME = "retry_management"
 
 EXECUTION_ERROR_PREFIX = "SQL execution error:"
 max_retries: int = 5
@@ -42,17 +46,20 @@ def compile(config: Config) -> CompiledStateGraph:
     agent_builder = StateGraph(state_schema=MessagesState)
     # Add nodes
     agent_builder.add_node(NODE_GENERATE_NAME, _node_generate_sql)
-    agent_builder.add_node(NODE_EXECUTE_NAME, _node_execute_sql)
+    agent_builder.add_node(NODE_RETRYMNG_NAME, _node_check_tool_result)
+    agent_builder.add_node(NODE_TOOLS_NAME, ToolNode(tool_list))
     agent_builder.add_node(NODE_ANSWER_NAME, _node_final_answer)
     # Add edges to connect nodes
     agent_builder.add_edge(START, NODE_GENERATE_NAME)
-    agent_builder.add_edge(NODE_GENERATE_NAME, NODE_EXECUTE_NAME)
     agent_builder.add_conditional_edges(
-        NODE_EXECUTE_NAME,
-        _edge_execution_success_check,
-        [NODE_ANSWER_NAME, NODE_GENERATE_NAME],
+        NODE_GENERATE_NAME, _edge_skip_execution, [NODE_TOOLS_NAME, NODE_ANSWER_NAME]
     )
-    agent_builder.add_edge(NODE_EXECUTE_NAME, NODE_ANSWER_NAME)
+    agent_builder.add_edge(NODE_TOOLS_NAME, NODE_RETRYMNG_NAME)
+    agent_builder.add_conditional_edges(
+        NODE_RETRYMNG_NAME,
+        _edge_execution_success_check,
+        [NODE_GENERATE_NAME, NODE_ANSWER_NAME],
+    )
     agent_builder.add_edge(NODE_ANSWER_NAME, END)
 
     # Compile the agent
@@ -71,6 +78,7 @@ def call(agent: CompiledStateGraph, message: str):
 
 ################################### GRAPH COMPONENTS
 def _node_generate_sql(state: MessagesState):
+    print("node generate")
     llm = get_llm()
     user_query = get_user_question(state)
     schema_context = get_table_metadata(user_query)
@@ -82,9 +90,8 @@ def _node_generate_sql(state: MessagesState):
     ]
     if _did_last_execution_fail(state):
         last_msg = state["messages"][-1]
-        print("appending error context for retry")
         # add to context the failed query
-        messages.append(AIMessage(content=state["messages"][-2].content))
+        messages.append(state["messages"][-2])
         # add to context the error message
         messages.append(last_msg)
         messages.append(
@@ -92,70 +99,43 @@ def _node_generate_sql(state: MessagesState):
                 content="The above SQL query failed. Please analyze the error and generate a corrected query."
             )
         )
-        retry_count = state.get("retry_count", 0) + 1
-    else:
-        retry_count = 0
 
-    content = llm.invoke(messages).content[0]["text"]  # type:ignore
-    if isinstance(content, list):
-        sql_text = "".join(block for block in content if isinstance(block, str))
-    else:
-        sql_text = str(content)
+    response = llm.invoke(messages)
 
     return {
-        "messages": [
-            AIMessage(
-                content=sql_text.strip(),
-            )
-        ],
-        "retry_count": retry_count,
+        "messages": [response],
     }
 
 
-def _node_execute_sql(state: MessagesState):
-    last_message = state["messages"][-1]
-    if last_message.type != "ai":
-        raise ValueError("Expected last message to be from AI")
-    sql_text = last_message.content
-    if isinstance(sql_text, list):
-        sql_text = "".join(block for block in sql_text if isinstance(block, str))
-
-    try:
-        rows, schema = run_sql_query(sql_text)
-        column_names = [col.name for col in schema]
-        header = "\t".join(column_names)
-        values = ""
-        for row in rows:
-            values += "\t".join([str(cell) for cell in row])
-            values += "\n"
-        query_result_string = f"{header}\n{values}"
-
-        return {
-            "messages": [
-                ToolMessage(content=query_result_string, tool_call_id="sql_execution")
-            ]
-        }
-
-    except Exception as e:
-        return {
-            "messages": [
-                ToolMessage(
-                    content=f"{EXECUTION_ERROR_PREFIX} {str(e)}",
-                    tool_call_id="sql_execution",
-                )
-            ]
-        }
+def _node_check_tool_result(state: MessagesState):
+    print("node check tool result")
+    if _did_last_execution_fail(state):
+        print("\tfailed, increase retry")
+        return {"retry_count": state.get("retry_count", 0) + 1}
+    else:
+        print("\tsuccess go forward")
+        return {"retry_count": 0}
 
 
 def _node_final_answer(state: MessagesState):
+    print("node final answer")
     llm = get_llm()
     user_query = get_user_question(state)
     sql_result = None
     for msg in reversed(state["messages"]):
-        if msg.type == "tool" and msg.tool_call_id == "sql_execution":
-            sql_result = msg.content
+        if msg.type == "tool":
+            sql_result = content_as_string(msg)
             break
-    system_prompt = local_prompts.final_answer.format(data=sql_result)
+
+    if sql_result is None:
+        print("MISSING DATA")
+    system_prompt = local_prompts.final_answer.format(
+        data=(
+            sql_result
+            if sql_result is not None
+            else "Data is missing for unknown reason. Notify user"
+        )
+    )
 
     messages = [("system", system_prompt), ("human", user_query)]
 
@@ -163,11 +143,26 @@ def _node_final_answer(state: MessagesState):
     return {"messages": [AIMessage(content=response)]}
 
 
+def _edge_skip_execution(state: MessagesState) -> str:
+    """Routes to tool sql execution or final answer generation depending on
+    if the model produced a sql query tool call in the previous message"""
+    last_message = state["messages"][-1]
+
+    if hasattr(last_message, "tool_calls") and last_message.tool_calls:  # type:ignore
+        print("edge go to tool execution")
+        return NODE_TOOLS_NAME
+    else:
+        print("edge skip tool execution")
+        return NODE_ANSWER_NAME
+
+
 def _edge_execution_success_check(state: MessagesState) -> str:
     current_retries = state.get("retry_count", 0)
     if _did_last_execution_fail(state) and current_retries < max_retries:
+        print("edge retry generation")
         return NODE_GENERATE_NAME
     else:
+        print("edge goto final answer")
         return NODE_ANSWER_NAME
 
 

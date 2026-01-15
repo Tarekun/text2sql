@@ -1,6 +1,7 @@
-language: it
-model_name: asd
-provider: vertex_ai
+language: en
+max_retries: 5
+model_name: CURRENTLY_UNUSED
+provider: CURRENTLY_UNUSED
 model_settings:
   temperature: 0.0
   # top_k: 20
