@@ -52,6 +52,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--temperature", type=float, help="Temperature for model sampling"
     )
+    parser.add_argument(
+        "--question", type=str, help="Question to ask the agent (single query mode)"
+    )
 
     args = parser.parse_args()
 
@@ -64,11 +67,15 @@ if __name__ == "__main__":
     agent = Text2SqlAgent(config)
     print_graph(agent.graph)
 
-    while True:
-        question = input("> ")
-        if question == "/quit":
-            break
-
-        answer = agent.invoke(question)
+    if args.question:
+        answer = agent.invoke(args.question)
         print(answer)
-    print("Bye!")
+    else:
+        while True:
+            question = input("> ")
+            if question == "/quit":
+                break
+
+            answer = agent.invoke(question)
+            print(answer)
+        print("Bye!")
