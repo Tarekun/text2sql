@@ -1,5 +1,5 @@
 from langchain.messages import HumanMessage
-from src.agent.graph import compile, call
+from src.agent.graph import Text2SqlAgent
 from src.config import read_config
 from src.db import gcp_pull_metadata, get_table_metadata
 from src.logger import configure_logger
@@ -16,31 +16,29 @@ if __name__ == "__main__":
 
     config = read_config(args.config)
     configure_logger(config)
-    agent = compile(config)
-    print_graph(agent)
+    agent = Text2SqlAgent(config)
+    print_graph(agent.graph)
 
-    # messages = agent.invoke(
+    # messages = agent.graph.invoke(
     #     {
     #         "messages": [
-    #             HumanMessage(
-    #                 content="find me all the addresses (INDIRIZZI) of the buildings (STRUTTURA) tracked on the db"
-    #             )
+    #             HumanMessage(content="what is the table with the most byte usage")
     #         ]
     #     }
     # )
     # print()
     # print("risultato")
-    # # for m in messages["messages"]:
-    # m = messages["messages"][-1]
-    # print(m.__class__)
-    # print(m)
-    # print()
+    # for m in messages["messages"]:
+    #     # m = messages["messages"][-1]
+    #     print(m.__class__)
+    #     print(m)
+    #     print()
 
     while True:
         question = input("> ")
         if question == "/quit":
             break
 
-        answer = call(agent, question)
+        answer = agent.invoke(question)
         print(answer)
     print("Bye!")
