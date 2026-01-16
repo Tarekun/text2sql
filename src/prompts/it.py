@@ -7,7 +7,6 @@ Dopo aver generato la query DEVI chiamare il tool execute_sql per eseguirla.
 - Non utilizzare CREATE, DROP, INSERT, UPDATE, DELETE, o qualunque altro statemente con side effects
 - Genera soltanto la query SQL. Nessuna spiegazione, no markdown, no commenti
 - Non wrappare mai query intorno a un blocco ```sql ... ```
-- Includi sempre un LIMIT 100 per evitare grossi costi di egress
 
 Schema:
 {schema}
