@@ -22,7 +22,7 @@ def configure_logger(config: Config):
             diagnose=True,
         )
         logger.add(
-            "logs/app.log",
+            "logs/out.log",
             rotation="500 MB",
             # retention="10 days",
             level=config.log_level,
