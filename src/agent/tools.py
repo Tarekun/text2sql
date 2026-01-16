@@ -29,7 +29,8 @@ def execute_sql(query: str) -> str:
 def fetch_metadata(user_question: str) -> str:
     """Fetch metadata about possibly relevant tables to the `user_question`"""
     logger.debug("tool: fetch metadata")
-    return get_table_metadata(user_question)
+    raw_metadata = get_table_metadata(user_question)
+    return raw_metadata
 
 
 tool_list = [execute_sql, fetch_metadata]

@@ -1,8 +1,9 @@
 language: en
 max_retries: 5
-model_name: CURRENTLY_UNUSED
+model_name: gemini-2.5-flash
+gcp_project: soges-group-data-platform
 provider: CURRENTLY_UNUSED
-log_level: DEBUG
+log_level: INFO
 model_settings:
   temperature: 0.0
   # top_k: 20
