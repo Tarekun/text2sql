@@ -17,6 +17,7 @@ class Config:
     provider: str
     model_settings: ModelSettings
     max_retries: int = 5
+    log_level: str = "INFO"
 
 
 def read_config(filepath: str = "config.yml") -> Config:

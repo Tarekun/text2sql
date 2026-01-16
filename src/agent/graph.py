@@ -16,6 +16,7 @@ from src.config import Config
 from src.db import get_table_metadata, run_sql_query
 from src.prompts import prompts, Prompts
 from src.utils import get_user_question, content_as_string
+from src.logger import logger
 
 
 class MessagesState(TypedDict):
@@ -90,9 +91,9 @@ def call(agent: CompiledStateGraph, message: str):
 
 ################################### GRAPH COMPONENTS
 def _node_generate_sql(state: MessagesState):
-    print("node generate")
+    logger.debug("node: main control node")
     if state.get("retry_count", 0) > max_retries:
-        print("Query generation failed too many times. Skipping")
+        logger.warning("Query generation failed too many times. Skipping")
         return {
             "messages": [
                 HumanMessage(content="Query generation failed too many times. Skipping")
@@ -133,10 +134,10 @@ def _node_generate_sql(state: MessagesState):
 
 
 def _node_post_tool(state: MessagesState):
-    print("node check tool result")
+    logger.debug("node: post tool state management")
     retry = 0
     if _did_last_execution_fail(state):
-        print("\tfailed, increase retry")
+        logger.warning("SQL execution failed, retrying")
         retry = state.get("retry_count", 0) + 1
 
     return {
@@ -147,16 +148,16 @@ def _node_post_tool(state: MessagesState):
 
 
 def _node_final_answer(state: MessagesState):
-    print("node final answer")
+    logger.debug("node: final answer")
     llm = get_llm(with_tools=False)
     user_query = get_user_question(state)
     metadata = state.get("metadata", "No metadata fetched yet")
     sql_result = state.get("fetched_data", "No rows fetched yet")
 
     if sql_result is None:
-        print("MISSING SQL RESULT")
+        logger.debug("Final answer has no SQL data available")
     if metadata is None:
-        print("MISSING TABLE METADATA")
+        logger.debug("Final answer has not metadata available")
     system_prompt = local_prompts.final_answer.format(
         data=sql_result,
         metadata=metadata,
@@ -168,6 +169,7 @@ def _node_final_answer(state: MessagesState):
 
 
 def _node_sufficiency_evaluation(state: MessagesState):
+    logger.debug("node: context evaluation")
     llm = get_llm()
     user_query = get_user_question(state)
     metadata = state.get("metadata", "No metadata fetched yet")
@@ -175,9 +177,10 @@ def _node_sufficiency_evaluation(state: MessagesState):
     system_prompt = local_prompts.evaluate_context.format(
         metadata=metadata, data=data, user_query=user_query
     )
-    print(system_prompt)
+
     response = llm.invoke(
         [
+            # gemini api always wants a system message AND a human message
             SystemMessage(
                 content="You are a strict evaluator. Respond only with DATA IS EXAUSTIVE or MISSING DATA."
             ),
@@ -185,7 +188,6 @@ def _node_sufficiency_evaluation(state: MessagesState):
         ]
     )
     response = content_as_string(response)
-    print(f"risposta {response}")
     return {"sufficient_context": "DATA IS EXAUSTIVE" in response.upper()}
 
 
@@ -193,19 +195,23 @@ def _edge_skip_execution(state: MessagesState) -> str:
     """Routes to tool sql execution or final answer generation depending on
     if the model produced a sql query tool call in the previous message"""
     last_message = state["messages"][-1]
+    logger.debug("edge: skip tools to final execution")
 
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:  # type:ignore
-        print("edge go to tool execution")
+        logger.debug("going to tool calls")
         return NODE_TOOLS_NAME
     else:
-        print("edge skip tool execution")
+        logger.debug("going to final generation")
         return NODE_ANSWER_NAME
 
 
 def _edge_sufficiency_evaluation(state: MessagesState) -> str:
+    logger.debug("edge: sufficient context branching")
     if state["sufficient_context"]:
+        logger.debug("proceeding to answer")
         return NODE_ANSWER_NAME
     else:
+        logger.debug("looping again")
         return NODE_GENERATE_NAME
 
 

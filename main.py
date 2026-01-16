@@ -2,6 +2,7 @@ from langchain.messages import HumanMessage
 from src.agent.graph import compile, call
 from src.config import read_config
 from src.db import gcp_pull_metadata, get_table_metadata
+from src.logger import configure_logger
 from src.utils import print_graph
 import argparse
 
@@ -14,6 +15,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     config = read_config(args.config)
+    configure_logger(config)
     agent = compile(config)
     print_graph(agent)
 

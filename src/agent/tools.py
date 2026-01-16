@@ -1,5 +1,6 @@
 from langchain.tools import tool
 from src.db import run_sql_query, get_table_metadata
+from src.logger import logger
 
 EXECUTION_ERROR_PREFIX = "SQL execution error:"
 
@@ -11,7 +12,7 @@ def execute_sql(query: str) -> str:
     """
 
     try:
-        print("tool run sql")
+        logger.debug("tool: execute sql")
         rows, schema = run_sql_query(query)
         column_names = [col.name for col in schema]
         header = "\t".join(column_names)
@@ -27,7 +28,7 @@ def execute_sql(query: str) -> str:
 @tool
 def fetch_metadata(user_question: str) -> str:
     """Fetch metadata about possibly relevant tables to the `user_question`"""
-    print("tool fetch metadata")
+    logger.debug("tool: fetch metadata")
     return get_table_metadata(user_question)
 
 
