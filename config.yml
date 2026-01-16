@@ -3,7 +3,7 @@ max_retries: 5
 model_name: gemini-2.5-flash
 gcp_project: soges-group-data-platform
 provider: CURRENTLY_UNUSED
-log_level: INFO
+log_level: DEBUG
 model_settings:
   temperature: 0.0
   # top_k: 20

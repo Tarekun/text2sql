@@ -59,6 +59,16 @@ Fetched data from SQL query (if any):
 {data}
 """
 
+metadata_extraction = """
+You are a helpful and never distracted assistant capable of managing lots of textual metadata and identifying the useful information for a request.
+You will be provided with a user question and some metadata and you have to extract only relevant data.
+
+- If a request only concerns a few tables keep the metadata of ONLY the concerned tables
+- If a request only concerns a few individual informations keep those data points ONLY instead of the entire metadata schema
+- ALWAYS keep ONLY the strict amount of information needed for the task being run
+- If the question requires querying data on the db ALWAYS keep the table schema information
+"""
+
 en_prompts = Prompts(
     sql_generation=en_sql_generation,
     final_answer=en_final_answer,

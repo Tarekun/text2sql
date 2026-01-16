@@ -29,10 +29,10 @@ if __name__ == "__main__":
     # print()
     # print("risultato")
     # for m in messages["messages"]:
-    #     # m = messages["messages"][-1]
+    # m = messages["messages"][-1]
     #     print(m.__class__)
-    #     print(m)
-    #     print()
+    # print(m)
+    # print()
 
     while True:
         question = input("> ")

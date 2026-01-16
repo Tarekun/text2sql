@@ -126,9 +126,10 @@ def _extract_other_metadata(resource) -> dict:
     return others
 
 
-def get_table_metadata(user_question=""):
+def get_table_metadata():
     with open("schema.yaml", "r") as f:
-        datasets = yaml.safe_load(f)
+        yaml_str = f.read()
+        datasets = yaml.safe_load(yaml_str)
 
     if not datasets:
         return "No datasets found in schema file."
@@ -153,4 +154,5 @@ def get_table_metadata(user_question=""):
 
             schema_str += "\n"
 
-    return schema_str
+    # return schema_str
+    return yaml_str
