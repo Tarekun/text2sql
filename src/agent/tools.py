@@ -14,7 +14,8 @@ from src.db import run_sql_query, get_table_metadata
 from src.prompts.en import metadata_extraction
 from src.logger import logger
 from src.utils import content_as_string
-
+import sys
+import io
 
 EXECUTION_ERROR_PREFIX = "SQL execution error:"
 QUERY_RESULT_DIRECTORY = "./query_results"
@@ -75,6 +76,53 @@ def fetch_metadata(user_question: str) -> str:
         metadata = content_as_string(response)
 
     return metadata
+
+
+@tool
+def python_interpreter(code: str) -> str:
+    """Execute arbitrary Python code in the current environment and return stdout + repr of last expression (if any).
+    Use this to analyze data, create visualizations (e.g., matplotlib), or process files.
+    The code runs in the same Python process as the agent — use with caution.
+    """
+    print("tool: python interpreter")
+    old_stdout = sys.stdout
+    try:
+        # Capture stdout
+        # old_stdout = sys.stdout
+        sys.stdout = captured_output = io.StringIO()
+
+        # Prepare a namespace (you can pre-load useful modules if desired)
+        global_namespace = {
+            "__builtins__": __builtins__,
+            # Optionally pre-import common libs:
+            "pd": __import__("pandas"),
+            "plt": __import__("matplotlib.pyplot"),
+            "np": __import__("numpy"),
+        }
+        local_namespace = {}
+
+        # Execute the code
+        try:
+            # Try to compile as an expression first (to capture return value)
+            compiled = compile(code.strip(), "<string>", "eval")
+            result = eval(compiled, global_namespace, local_namespace)
+            output = captured_output.getvalue()
+            if output:
+                result_str = f"{output}{repr(result)}"
+            else:
+                result_str = repr(result)
+        except SyntaxError:
+            # Fall back to exec for statements
+            exec(code, global_namespace, local_namespace)
+            result_str = captured_output.getvalue() or "(no output)"
+
+        print(f"returning {result_str}")
+        return result_str
+
+    except Exception as e:
+        return f"Python execution error: {e}"
+    finally:
+        sys.stdout = old_stdout
 
 
 tool_list = [execute_sql, fetch_metadata]

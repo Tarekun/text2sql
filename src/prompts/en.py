@@ -33,12 +33,17 @@ Stay focused on the user question and answer in a way that is grounded on the (m
 Data and metadata might be missing depending on if the previous workflow determined they are not needed for final answer generation,
 if you have enough information to anwer ALWAYS answer meaningfully, if the necessary information is missing ALWAYS notify the user about it.
 NEVER leave the user hanging with no output.
+In case user requested postprocessing on data it should have been via python and the execution must have been done already by now.
+Std output of the execution of the python program is available in the context and if something went wrong or no script was run despite the user asking for it, notify them that something went wrong.
 
 Fetched metadata:
 {metadata}
 
 Fetched data:
 {data}
+
+Last python execution output:
+{python_output}
 """
 
 evaluate_context = """
@@ -69,8 +74,28 @@ You will be provided with a user question and some metadata and you have to extr
 - If the question requires querying data on the db ALWAYS keep the table schema information
 """
 
+python_execution = """
+You are a data specialist and a python expert. Your task is to analyse the data that was made provided by the previous job and process it with python according to the user question IF necessary.
+You can run programs in an environment with pandas, numpy and matplotlib already available.
+Generate correct python programs that adhere to the specification and do the feature request by the user, if any.
+To run python programs you have access to the python_interpreter tool available.
+
+Remember:
+- Data previews are available in the context and the full data can always be found at the csv file path indicated here.
+- If the user didn't request any postprocessing of the fetched data simply skip the task and terminate with success right away.
+- When generating a script to run ALWAYS include meaningful prints, std output will be captured and included in this prompt if scripts have been run before
+- ALWAYS persist the requested output of the program in files inside the dedicated './output' directory
+
+Fetched data from db (if any):
+{data}
+
+Previous python execution:
+{python_output}
+"""
+
 en_prompts = Prompts(
     sql_generation=en_sql_generation,
     final_answer=en_final_answer,
     evaluate_context=evaluate_context,
+    python_execution=python_execution,
 )

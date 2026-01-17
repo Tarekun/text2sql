@@ -9,8 +9,8 @@ def _validate_query(query: str) -> str:
     cleaned_query = cleaned_query.removeprefix("```")
     cleaned_query = cleaned_query.removesuffix("```")
     cleaned_query = cleaned_query.strip().rstrip(";")
-    if not re.search(r"\bLIMIT\s+\d+", cleaned_query, re.IGNORECASE):
-        cleaned_query += " LIMIT 100"
+    # if not re.search(r"\bLIMIT\s+\d+", cleaned_query, re.IGNORECASE):
+    #     cleaned_query += " LIMIT 100"
 
     # # Block non-SELECT queries
     # if not sql.upper().lstrip().startswith("SELECT"):

@@ -6,3 +6,4 @@ class Prompts:
     sql_generation: str
     final_answer: str
     evaluate_context: str
+    python_execution: str

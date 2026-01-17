@@ -10,3 +10,4 @@ wheels/
 .aider*
 logs
 query_results
+output

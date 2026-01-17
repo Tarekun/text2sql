@@ -11,7 +11,7 @@ from langgraph.prebuilt import ToolNode
 import operator
 from typing_extensions import TypedDict, Annotated
 from src.agent.llm_backend import instantiate_llm
-from src.agent.tools import tool_list
+from src.agent.tools import *
 from src.config import Config
 from src.db import get_table_metadata, run_sql_query
 from src.prompts import prompts, Prompts
@@ -25,6 +25,7 @@ class MessagesState(TypedDict):
     fetched_data: str
     retry_count: int
     sufficient_context: bool
+    python_output: str
 
 
 NODE_GENERATE_NAME = "generate_sql"
@@ -32,6 +33,8 @@ NODE_EXECUTE_NAME = "execute_sql"
 NODE_ANSWER_NAME = "answer"
 NODE_TOOLS_NAME = "tools"
 NODE_POST_TOOL_NAME = "tool_state_mngt"
+NODE_PYTHON_POST_TOOL_NAME = "python_tool_state_mngt"
+NODE_PYTHON_INTERPRETER_NAME = "python_interpreter"
 NODE_SUFFEVAL_NAME = "context_eval"
 llm_nodes = [NODE_GENERATE_NAME, NODE_ANSWER_NAME, NODE_SUFFEVAL_NAME]
 tool_nodes = [NODE_TOOLS_NAME]
@@ -40,6 +43,7 @@ EXECUTION_ERROR_PREFIX = "SQL execution error:"
 
 
 class Text2SqlAgent:
+    # TODO: HANDLE ROUTING OF PYTHON INTERPRETER BETTER
     def __init__(self, config: Config):
         self.max_retries = config.max_retries
         self.local_prompts = prompts[config.language]
@@ -50,23 +54,33 @@ class Text2SqlAgent:
         # Add nodes
         agent_builder.add_node(NODE_GENERATE_NAME, self._node_generate_sql)
         agent_builder.add_node(NODE_TOOLS_NAME, ToolNode(tool_list))
+        agent_builder.add_node(
+            NODE_PYTHON_INTERPRETER_NAME, ToolNode([python_interpreter])
+        )
         agent_builder.add_node(NODE_POST_TOOL_NAME, self._node_post_tool)
+        agent_builder.add_node(NODE_PYTHON_POST_TOOL_NAME, self._node_post_tool2)
         agent_builder.add_node(NODE_SUFFEVAL_NAME, self._node_sufficiency_evaluation)
+        agent_builder.add_node("python_generation", self._node_python_execution_sql)
         agent_builder.add_node(NODE_ANSWER_NAME, self._node_final_answer)
         # Add edges to connect nodes
         agent_builder.add_edge(START, NODE_GENERATE_NAME)
         agent_builder.add_conditional_edges(
             NODE_GENERATE_NAME,
             self._edge_skip_execution,
-            [NODE_TOOLS_NAME, NODE_ANSWER_NAME],
+            [NODE_TOOLS_NAME, "python_generation"],
+            # [NODE_TOOLS_NAME, NODE_ANSWER_NAME],
         )
         agent_builder.add_edge(NODE_TOOLS_NAME, NODE_POST_TOOL_NAME)
         agent_builder.add_edge(NODE_POST_TOOL_NAME, NODE_SUFFEVAL_NAME)
         agent_builder.add_conditional_edges(
             NODE_SUFFEVAL_NAME,
             self._edge_sufficiency_evaluation,
-            [NODE_GENERATE_NAME, NODE_ANSWER_NAME],
+            [NODE_GENERATE_NAME, "python_generation"],
+            # [NODE_GENERATE_NAME, NODE_ANSWER_NAME],
         )
+        agent_builder.add_edge("python_generation", NODE_PYTHON_INTERPRETER_NAME)
+        agent_builder.add_edge(NODE_PYTHON_INTERPRETER_NAME, NODE_PYTHON_POST_TOOL_NAME)
+        agent_builder.add_edge(NODE_PYTHON_POST_TOOL_NAME, NODE_ANSWER_NAME)
         agent_builder.add_edge(NODE_ANSWER_NAME, END)
 
         # Compile the agent
@@ -98,7 +112,7 @@ class Text2SqlAgent:
             data=data,
             db_kind="BigQuery",
         )
-        llm = self.llm.bind_tools(tool_list)
+        llm = self.llm.bind_tools([execute_sql, fetch_metadata])
 
         messages = [
             SystemMessage(content=system_prompt),
@@ -121,6 +135,29 @@ class Text2SqlAgent:
             "messages": [response],
         }
 
+    def _node_python_execution_sql(self, state: MessagesState):
+        print("node: python execution node")
+        llm = self.llm.bind_tools([python_interpreter])
+        user_query = get_user_question(state)
+        data = state.get("fetched_data", "No data fetched")
+        python_output = state.get("python_output", "No previous python executions")
+        print(python_output)
+        system_prompt = self.local_prompts.python_execution.format(
+            data=data,
+            python_output=python_output,
+        )
+
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_query),
+        ]
+
+        response = llm.invoke(messages)
+        print(response)
+        return {
+            "messages": [response],
+        }
+
     def _node_post_tool(self, state: MessagesState):
         logger.debug("node: post tool state management")
         retry = 0
@@ -134,11 +171,23 @@ class Text2SqlAgent:
             "fetched_data": _get_fetched_data(state),
         }
 
+    def _node_post_tool2(self, state: MessagesState):
+        logger.debug("node: post tool state management")
+        retry = 0
+        if _did_last_execution_fail(state):
+            logger.warning("SQL execution failed, retrying")
+            retry = state.get("retry_count", 0) + 1
+
+        return {
+            "python_output": _get_python_output(state),
+        }
+
     def _node_final_answer(self, state: MessagesState):
         logger.debug("node: final answer")
         user_query = get_user_question(state)
         metadata = state.get("metadata", "No metadata fetched yet")
         sql_result = state.get("fetched_data", "No rows fetched yet")
+        python_output = state.get("python_output", "No previous python executions")
 
         if sql_result is None:
             logger.debug("Final answer has no SQL data available")
@@ -147,6 +196,7 @@ class Text2SqlAgent:
         system_prompt = self.local_prompts.final_answer.format(
             data=sql_result,
             metadata=metadata,
+            python_output=python_output,
         )
         messages = [("system", system_prompt), ("human", user_query)]
 
@@ -158,8 +208,12 @@ class Text2SqlAgent:
         user_query = get_user_question(state)
         metadata = state.get("metadata", "No metadata fetched yet")
         data = state.get("fetched_data", "No rows fetched yet")
+        python_output = state.get("python_output", "No previous python executions")
         system_prompt = self.local_prompts.evaluate_context.format(
-            metadata=metadata, data=data, user_query=user_query
+            metadata=metadata,
+            data=data,
+            user_query=user_query,
+            python_output=python_output,
         )
 
         response = self.llm.invoke(
@@ -195,7 +249,8 @@ class Text2SqlAgent:
         logger.debug("edge: sufficient context branching")
         if state["sufficient_context"]:
             logger.debug("proceeding to answer")
-            return NODE_ANSWER_NAME
+            return "python_generation"
+            # return NODE_ANSWER_NAME
         else:
             logger.debug("looping again")
             return NODE_GENERATE_NAME
@@ -220,4 +275,18 @@ def _get_fetched_data(state: MessagesState) -> str | None:
     for msg in reversed(state["messages"]):
         if msg.type == "tool" and msg.name == "execute_sql":
             return content_as_string(msg)
+    return None
+
+
+def _get_python_output(state: MessagesState) -> str | None:
+    for msg in reversed(state["messages"]):
+        if msg.type == "tool" and msg.name == "python_interpreter":
+            return content_as_string(msg)
+        # if msg.type == "tool":
+        # if (
+        #     msg.additional_kwargs.get("function_call", {}).get("name")
+        #     == "python_interpreter"
+        # ):
+        #     return content_as_string(msg)
+        # break
     return None
