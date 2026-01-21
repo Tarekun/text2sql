@@ -37,7 +37,28 @@ def content_as_string(message: AnyMessage) -> str:
     return content
 
 
-def print_graph(compiled_graph: CompiledStateGraph):
-    png_bytes = compiled_graph.get_graph(xray=True).draw_mermaid_png()
+def print_graph(compiled_graph: CompiledStateGraph, tool_nodes=[], llm_nodes=[]):
+    graph = compiled_graph.get_graph(xray=True)
+    # default graph styling
+    mermaid_code = graph.draw_mermaid()
+
+    custom_styles = []
+    for node in llm_nodes:
+        # red for LLM nodes
+        custom_styles.append(f"style {node} fill:#2ecc71,color:#fff")
+    for node in tool_nodes:
+        # green for tool nodes
+        custom_styles.append(f"style {node} fill:#3498db,color:#fff")
+
+    styled_mermaid = mermaid_code + "\n" + "\n".join(custom_styles)
+
+    # Render to PNG using the mermaid API
+    import requests
+    import base64
+
+    response = requests.get(
+        "https://mermaid.ink/img/"
+        + base64.urlsafe_b64encode(styled_mermaid.encode()).decode()
+    )
     with open("graph.png", "wb") as f:
-        f.write(png_bytes)
+        f.write(response.content)

@@ -33,6 +33,8 @@ NODE_ANSWER_NAME = "answer"
 NODE_TOOLS_NAME = "tools"
 NODE_POST_TOOL_NAME = "tool_state_mngt"
 NODE_SUFFEVAL_NAME = "context_eval"
+llm_nodes = [NODE_GENERATE_NAME, NODE_ANSWER_NAME, NODE_SUFFEVAL_NAME]
+tool_nodes = [NODE_TOOLS_NAME]
 
 EXECUTION_ERROR_PREFIX = "SQL execution error:"
 
