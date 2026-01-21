@@ -5,6 +5,11 @@ import yaml
 
 
 def _validate_query(query: str) -> str:
+    for forbidden_keyword in ["INSERT", "ALTER", "UPDATE", "DROP", "DELETE"]:
+        raise ValueError(
+            f"Keyword {forbidden_keyword} is forbidden in this environment. DB altering statements have been disabled"
+        )
+
     cleaned_query = query.removeprefix("```sql")
     cleaned_query = cleaned_query.removeprefix("```")
     cleaned_query = cleaned_query.removesuffix("```")

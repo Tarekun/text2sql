@@ -22,6 +22,12 @@ def did_last_sql_run_fail(state: MessagesState) -> bool:
     return SQL_EXECUTION_ERROR_PREFIX in last_message
 
 
+def did_last_python_run_fail(state: MessagesState) -> bool:
+    """Returns `True` iff the last message was from the python execution tool and failed"""
+    last_message = content_as_string(state["messages"][-1])
+    return PYTHON_EXECUTION_ERROR_PREFIX in last_message
+
+
 def get_fetched_metadata(state: MessagesState) -> str | None:
     """Returns the string output of the latest `fetch_metadata` tool if it was run before,
     `None` otherwise"""
