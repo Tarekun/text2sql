@@ -33,11 +33,19 @@ NODE_EXECUTE_NAME = "execute_sql"
 NODE_ANSWER_NAME = "answer"
 NODE_TOOLS_NAME = "tools"
 NODE_POST_TOOL_NAME = "tool_state_mngt"
+NODE_PYTHON_GENERATION_NAME = "python_generation"
 NODE_PYTHON_POST_TOOL_NAME = "python_tool_state_mngt"
 NODE_PYTHON_INTERPRETER_NAME = "python_interpreter"
 NODE_SUFFEVAL_NAME = "context_eval"
-llm_nodes = [NODE_GENERATE_NAME, NODE_ANSWER_NAME, NODE_SUFFEVAL_NAME]
-tool_nodes = [NODE_TOOLS_NAME]
+llm_control_nodes = [
+    NODE_GENERATE_NAME,
+    NODE_PYTHON_GENERATION_NAME,
+]
+llm_nodes = [
+    NODE_ANSWER_NAME,
+    NODE_SUFFEVAL_NAME,
+]
+tool_nodes = [NODE_TOOLS_NAME, NODE_PYTHON_INTERPRETER_NAME]
 
 EXECUTION_ERROR_PREFIX = "SQL execution error:"
 
@@ -60,14 +68,16 @@ class Text2SqlAgent:
         agent_builder.add_node(NODE_POST_TOOL_NAME, self._node_post_tool)
         agent_builder.add_node(NODE_PYTHON_POST_TOOL_NAME, self._node_post_tool2)
         agent_builder.add_node(NODE_SUFFEVAL_NAME, self._node_sufficiency_evaluation)
-        agent_builder.add_node("python_generation", self._node_python_execution_sql)
+        agent_builder.add_node(
+            NODE_PYTHON_GENERATION_NAME, self._node_python_execution_sql
+        )
         agent_builder.add_node(NODE_ANSWER_NAME, self._node_final_answer)
         # Add edges to connect nodes
         agent_builder.add_edge(START, NODE_GENERATE_NAME)
         agent_builder.add_conditional_edges(
             NODE_GENERATE_NAME,
             self._edge_skip_execution,
-            [NODE_TOOLS_NAME, "python_generation"],
+            [NODE_TOOLS_NAME, NODE_PYTHON_GENERATION_NAME],
             # [NODE_TOOLS_NAME, NODE_ANSWER_NAME],
         )
         agent_builder.add_edge(NODE_TOOLS_NAME, NODE_POST_TOOL_NAME)
@@ -75,10 +85,12 @@ class Text2SqlAgent:
         agent_builder.add_conditional_edges(
             NODE_SUFFEVAL_NAME,
             self._edge_sufficiency_evaluation,
-            [NODE_GENERATE_NAME, "python_generation"],
+            [NODE_GENERATE_NAME, NODE_PYTHON_GENERATION_NAME],
             # [NODE_GENERATE_NAME, NODE_ANSWER_NAME],
         )
-        agent_builder.add_edge("python_generation", NODE_PYTHON_INTERPRETER_NAME)
+        agent_builder.add_edge(
+            NODE_PYTHON_GENERATION_NAME, NODE_PYTHON_INTERPRETER_NAME
+        )
         agent_builder.add_edge(NODE_PYTHON_INTERPRETER_NAME, NODE_PYTHON_POST_TOOL_NAME)
         agent_builder.add_edge(NODE_PYTHON_POST_TOOL_NAME, NODE_ANSWER_NAME)
         agent_builder.add_edge(NODE_ANSWER_NAME, END)
@@ -249,7 +261,7 @@ class Text2SqlAgent:
         logger.debug("edge: sufficient context branching")
         if state["sufficient_context"]:
             logger.debug("proceeding to answer")
-            return "python_generation"
+            return NODE_PYTHON_GENERATION_NAME
             # return NODE_ANSWER_NAME
         else:
             logger.debug("looping again")

@@ -37,7 +37,12 @@ def content_as_string(message: AnyMessage) -> str:
     return content
 
 
-def print_graph(compiled_graph: CompiledStateGraph, tool_nodes=[], llm_nodes=[]):
+def print_graph(
+    compiled_graph: CompiledStateGraph,
+    tool_nodes=[],
+    llm_control_nodes=[],
+    llm_nodes=[],
+):
     # i dont like these kinds of imports but at this stage who cares tbh
     import requests
     import base64
@@ -49,7 +54,9 @@ def print_graph(compiled_graph: CompiledStateGraph, tool_nodes=[], llm_nodes=[])
     custom_styles = []
     for node in llm_nodes:
         # LLM nodes colored in red
-        custom_styles.append(f"style {node} fill:#2ecc71,color:#fff")
+        custom_styles.append(f"style {node} fill:#b5f5c8,color:#333")
+    for node in llm_control_nodes:
+        custom_styles.append(f"style {node} fill:#2ecc71,color:#000")
     for node in tool_nodes:
         # tool nodes colored in blue
         custom_styles.append(f"style {node} fill:#3498db,color:#fff")
