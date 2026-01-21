@@ -1,5 +1,5 @@
 from langchain.messages import HumanMessage
-from src.agent.graph import Text2SqlAgent
+from src.agent.graph import Text2SqlAgent, llm_nodes, tool_nodes
 from src.config import read_config, Config
 from src.db import gcp_pull_metadata, get_table_metadata
 from src.logger import configure_logger, logger
@@ -65,7 +65,7 @@ if __name__ == "__main__":
     # has to be after the configure_logger call
     logger.debug(f"Loaded config: {config}")
     agent = Text2SqlAgent(config)
-    print_graph(agent.graph)
+    print_graph(agent.graph, llm_nodes=llm_nodes, tool_nodes=tool_nodes)
 
     if args.question:
         answer = agent.invoke(args.question)
