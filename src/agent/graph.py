@@ -11,21 +11,13 @@ from langgraph.prebuilt import ToolNode
 import operator
 from typing_extensions import TypedDict, Annotated
 from src.agent.llm_backend import instantiate_llm
+from src.agent.state import *
 from src.agent.tools import *
 from src.config import Config
 from src.db import get_table_metadata, run_sql_query
 from src.prompts import prompts, Prompts
 from src.utils import get_user_question, content_as_string
 from src.logger import logger
-
-
-class MessagesState(TypedDict):
-    messages: Annotated[list[AnyMessage], operator.add]
-    metadata: str
-    fetched_data: str
-    retry_count: int
-    sufficient_context: bool
-    python_output: str
 
 
 NODE_GENERATE_NAME = "generate_sql"
@@ -61,7 +53,7 @@ class Text2SqlAgent:
         agent_builder = StateGraph(state_schema=MessagesState)
         # Add nodes
         agent_builder.add_node(NODE_GENERATE_NAME, self._node_generate_sql)
-        agent_builder.add_node(NODE_TOOLS_NAME, ToolNode(tool_list))
+        agent_builder.add_node(NODE_TOOLS_NAME, ToolNode([execute_sql, fetch_metadata]))
         agent_builder.add_node(
             NODE_PYTHON_INTERPRETER_NAME, ToolNode([python_interpreter])
         )
@@ -78,7 +70,6 @@ class Text2SqlAgent:
             NODE_GENERATE_NAME,
             self._edge_skip_execution,
             [NODE_TOOLS_NAME, NODE_PYTHON_GENERATION_NAME],
-            # [NODE_TOOLS_NAME, NODE_ANSWER_NAME],
         )
         agent_builder.add_edge(NODE_TOOLS_NAME, NODE_POST_TOOL_NAME)
         agent_builder.add_edge(NODE_POST_TOOL_NAME, NODE_SUFFEVAL_NAME)
@@ -86,7 +77,6 @@ class Text2SqlAgent:
             NODE_SUFFEVAL_NAME,
             self._edge_sufficiency_evaluation,
             [NODE_GENERATE_NAME, NODE_PYTHON_GENERATION_NAME],
-            # [NODE_GENERATE_NAME, NODE_ANSWER_NAME],
         )
         agent_builder.add_edge(
             NODE_PYTHON_GENERATION_NAME, NODE_PYTHON_INTERPRETER_NAME
@@ -95,10 +85,7 @@ class Text2SqlAgent:
         agent_builder.add_edge(NODE_PYTHON_POST_TOOL_NAME, NODE_ANSWER_NAME)
         agent_builder.add_edge(NODE_ANSWER_NAME, END)
 
-        # Compile the agent
-        agent = agent_builder.compile()
-
-        self.graph: CompiledStateGraph = agent
+        self.graph: CompiledStateGraph = agent_builder.compile()
 
     def invoke(self, message: str):
         messages = self.graph.invoke({"messages": [HumanMessage(content=message)]})
@@ -130,7 +117,7 @@ class Text2SqlAgent:
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_query),
         ]
-        if _did_last_execution_fail(state):
+        if did_last_sql_run_fail(state):
             tool_error_msg = state["messages"][-1]
             # add to context the failed query
             messages.append(state["messages"][-2])
@@ -148,13 +135,12 @@ class Text2SqlAgent:
         }
 
     def _node_python_execution_sql(self, state: MessagesState):
-        print("node: python execution node")
+        logger.debug("node: python execution node")
         llm = self.llm.bind_tools([python_interpreter])
         user_query = get_user_question(state)
         data = state.get("fetched_data", "No data fetched")
         python_output = state.get("python_output", "No previous python executions")
-        print(python_output)
-        system_prompt = self.local_prompts.python_execution.format(
+        system_prompt = self.local_prompts.python_opt_generation.format(
             data=data,
             python_output=python_output,
         )
@@ -165,7 +151,6 @@ class Text2SqlAgent:
         ]
 
         response = llm.invoke(messages)
-        print(response)
         return {
             "messages": [response],
         }
@@ -173,25 +158,25 @@ class Text2SqlAgent:
     def _node_post_tool(self, state: MessagesState):
         logger.debug("node: post tool state management")
         retry = 0
-        if _did_last_execution_fail(state):
+        if did_last_sql_run_fail(state):
             logger.warning("SQL execution failed, retrying")
             retry = state.get("retry_count", 0) + 1
 
         return {
             "retry_count": retry,
-            "metadata": _get_fetched_metadata(state),
-            "fetched_data": _get_fetched_data(state),
+            "metadata": get_fetched_metadata(state),
+            "fetched_data": get_fetched_data(state),
         }
 
     def _node_post_tool2(self, state: MessagesState):
         logger.debug("node: post tool state management")
         retry = 0
-        if _did_last_execution_fail(state):
+        if did_last_sql_run_fail(state):
             logger.warning("SQL execution failed, retrying")
             retry = state.get("retry_count", 0) + 1
 
         return {
-            "python_output": _get_python_output(state),
+            "python_output": get_python_output(state),
         }
 
     def _node_final_answer(self, state: MessagesState):
@@ -262,43 +247,6 @@ class Text2SqlAgent:
         if state["sufficient_context"]:
             logger.debug("proceeding to answer")
             return NODE_PYTHON_GENERATION_NAME
-            # return NODE_ANSWER_NAME
         else:
             logger.debug("looping again")
             return NODE_GENERATE_NAME
-
-
-############################# HELPER FUNCTIONS
-
-
-def _did_last_execution_fail(state: MessagesState) -> bool:
-    last_message = content_as_string(state["messages"][-1])
-    return EXECUTION_ERROR_PREFIX in last_message
-
-
-def _get_fetched_metadata(state: MessagesState) -> str | None:
-    for msg in reversed(state["messages"]):
-        if msg.type == "tool" and msg.name == "fetch_metadata":
-            return content_as_string(msg)
-    return None
-
-
-def _get_fetched_data(state: MessagesState) -> str | None:
-    for msg in reversed(state["messages"]):
-        if msg.type == "tool" and msg.name == "execute_sql":
-            return content_as_string(msg)
-    return None
-
-
-def _get_python_output(state: MessagesState) -> str | None:
-    for msg in reversed(state["messages"]):
-        if msg.type == "tool" and msg.name == "python_interpreter":
-            return content_as_string(msg)
-        # if msg.type == "tool":
-        # if (
-        #     msg.additional_kwargs.get("function_call", {}).get("name")
-        #     == "python_interpreter"
-        # ):
-        #     return content_as_string(msg)
-        # break
-    return None

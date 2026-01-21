@@ -25,5 +25,5 @@ it_prompts = Prompts(
     sql_generation=it_sql_generation,
     final_answer=it_final_answer,
     evaluate_context="",
-    python_execution="",
+    python_opt_generation="",
 )

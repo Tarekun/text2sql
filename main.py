@@ -72,15 +72,15 @@ if __name__ == "__main__":
         tool_nodes=tool_nodes,
     )
 
-    # if args.question:
-    #     answer = agent.invoke(args.question)
-    #     print(answer)
-    # else:
-    #     while True:
-    #         question = input("> ")
-    #         if question == "/quit":
-    #             break
+    if args.question:
+        answer = agent.invoke(args.question)
+        print(answer)
+    else:
+        while True:
+            question = input("> ")
+            if question == "/quit":
+                break
 
-    #         answer = agent.invoke(question)
-    #         print(answer)
-    #     print("Bye!")
+            answer = agent.invoke(question)
+            print(answer)
+        print("Bye!")

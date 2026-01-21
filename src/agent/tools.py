@@ -17,7 +17,8 @@ from src.utils import content_as_string
 import sys
 import io
 
-EXECUTION_ERROR_PREFIX = "SQL execution error:"
+SQL_EXECUTION_ERROR_PREFIX = "SQL execution error:"
+PYTHON_EXECUTION_ERROR_PREFIX = "Python execution error:"
 QUERY_RESULT_DIRECTORY = "./query_results"
 makedirs(QUERY_RESULT_DIRECTORY, exist_ok=True)
 
@@ -53,7 +54,7 @@ def execute_sql(query: str, meaningful_filename: str) -> str:
             values += "\n"
         return f"(The full query result is available at the path {QUERY_RESULT_DIRECTORY}/{meaningful_filename})\n{header}\n{values}"
     except Exception as e:
-        return f"{EXECUTION_ERROR_PREFIX} {str(e)}"
+        return f"{SQL_EXECUTION_ERROR_PREFIX} {str(e)}"
 
 
 @tool
@@ -87,43 +88,34 @@ def python_interpreter(code: str) -> str:
     print("tool: python interpreter")
     old_stdout = sys.stdout
     try:
-        # Capture stdout
-        # old_stdout = sys.stdout
+        # capture stdout
         sys.stdout = captured_output = io.StringIO()
-
-        # Prepare a namespace (you can pre-load useful modules if desired)
+        # namespace initialization with preimported useful libraries
         global_namespace = {
             "__builtins__": __builtins__,
-            # Optionally pre-import common libs:
             "pd": __import__("pandas"),
             "plt": __import__("matplotlib.pyplot"),
             "np": __import__("numpy"),
         }
         local_namespace = {}
 
-        # Execute the code
-        try:
-            # Try to compile as an expression first (to capture return value)
-            compiled = compile(code.strip(), "<string>", "eval")
-            result = eval(compiled, global_namespace, local_namespace)
-            output = captured_output.getvalue()
-            if output:
-                result_str = f"{output}{repr(result)}"
-            else:
-                result_str = repr(result)
-        except SyntaxError:
-            # Fall back to exec for statements
-            exec(code, global_namespace, local_namespace)
-            result_str = captured_output.getvalue() or "(no output)"
+        # try:
+        # try to compile as an expression first (to capture return value)
+        compiled = compile(code.strip(), "<string>", "eval")
+        result = eval(compiled, global_namespace, local_namespace)
+        output = captured_output.getvalue()
+        print(output)
+        if output:
+            return f"{output}\n{repr(result)}"
+        else:
+            return repr(result)
 
-        print(f"returning {result_str}")
-        return result_str
+        # except SyntaxError:
+        #     # Fall back to exec for statements
+        #     exec(code, global_namespace, local_namespace)
+        #     result_str = captured_output.getvalue() or "(no output)"
 
     except Exception as e:
         return f"Python execution error: {e}"
     finally:
         sys.stdout = old_stdout
-
-
-tool_list = [execute_sql, fetch_metadata]
-tools_dict = {tool.name: tool for tool in tool_list}

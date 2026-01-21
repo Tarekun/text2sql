@@ -74,7 +74,7 @@ You will be provided with a user question and some metadata and you have to extr
 - If the question requires querying data on the db ALWAYS keep the table schema information
 """
 
-python_execution = """
+python_opt_generation = """
 You are a data specialist and a python expert. Your task is to analyse the data that was made provided by the previous job and process it with python according to the user question IF necessary.
 You can run programs in an environment with pandas, numpy and matplotlib already available.
 Generate correct python programs that adhere to the specification and do the feature request by the user, if any.
@@ -97,5 +97,5 @@ en_prompts = Prompts(
     sql_generation=en_sql_generation,
     final_answer=en_final_answer,
     evaluate_context=evaluate_context,
-    python_execution=python_execution,
+    python_opt_generation=python_opt_generation,
 )
