@@ -5,33 +5,16 @@ import yaml
 
 
 def _validate_query(query: str) -> str:
+    for forbidden_keyword in ["INSERT", "ALTER", "UPDATE", "DROP", "DELETE"]:
+        if forbidden_keyword in query:
+            raise ValueError(
+                f"Keyword {forbidden_keyword} is forbidden in this environment. DB altering statements have been disabled"
+            )
+
     cleaned_query = query.removeprefix("```sql")
     cleaned_query = cleaned_query.removeprefix("```")
     cleaned_query = cleaned_query.removesuffix("```")
     cleaned_query = cleaned_query.strip().rstrip(";")
-    if not re.search(r"\bLIMIT\s+\d+", cleaned_query, re.IGNORECASE):
-        cleaned_query += " LIMIT 100"
-
-    # # Block non-SELECT queries
-    # if not sql.upper().lstrip().startswith("SELECT"):
-    #     return {
-    #         "messages": [
-    #             ToolMessage(
-    #                 content="Error: Only SELECT queries are allowed.",
-    #                 tool_call_id="sql_execution"
-    #             )
-    #         ]
-    #     }
-    # # Block dangerous keywords
-    # if DANGEROUS_PATTERNS.search(sql):
-    #     return {
-    #         "messages": [
-    #             ToolMessage(
-    #                 content="Error: Query contains forbidden operations.",
-    #                 tool_call_id="sql_execution"
-    #             )
-    #         ]
-    #     }
     return cleaned_query
 
 

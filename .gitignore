@@ -6,7 +6,11 @@ dist/
 wheels/
 *.egg-info
 
+# directories used by the agent for output
+output
+query_results
+generated_code
+
 .venv
 .aider*
 logs
-query_results

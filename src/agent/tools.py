@@ -1,13 +1,13 @@
 import csv
 from langchain.messages import (
-    ToolMessage,
     SystemMessage,
-    AnyMessage,
-    AIMessage,
     HumanMessage,
 )
 from langchain.tools import tool
-from os import makedirs
+import os
+import re
+import subprocess
+import sys
 from src.agent.llm_backend import instantiate_llm
 from src.config import read_config
 from src.db import run_sql_query, get_table_metadata
@@ -16,9 +16,10 @@ from src.logger import logger
 from src.utils import content_as_string
 
 
-EXECUTION_ERROR_PREFIX = "SQL execution error:"
+SQL_EXECUTION_ERROR_PREFIX = "SQL execution error:"
+PYTHON_EXECUTION_ERROR_PREFIX = "Python execution error"
 QUERY_RESULT_DIRECTORY = "./query_results"
-makedirs(QUERY_RESULT_DIRECTORY, exist_ok=True)
+os.makedirs(QUERY_RESULT_DIRECTORY, exist_ok=True)
 
 
 @tool
@@ -30,6 +31,7 @@ def execute_sql(query: str, meaningful_filename: str) -> str:
 
     try:
         logger.debug("tool: execute sql")
+        save_code(query, extension="sql", custom_name=meaningful_filename)
         rows, schema = run_sql_query(query)
         column_names = [col.name for col in schema]
         if not meaningful_filename.endswith(".csv"):
@@ -52,7 +54,7 @@ def execute_sql(query: str, meaningful_filename: str) -> str:
             values += "\n"
         return f"(The full query result is available at the path {QUERY_RESULT_DIRECTORY}/{meaningful_filename})\n{header}\n{values}"
     except Exception as e:
-        return f"{EXECUTION_ERROR_PREFIX} {str(e)}"
+        return f"{SQL_EXECUTION_ERROR_PREFIX} {str(e)}"
 
 
 @tool
@@ -77,5 +79,60 @@ def fetch_metadata(user_question: str) -> str:
     return metadata
 
 
-tool_list = [execute_sql, fetch_metadata]
-tools_dict = {tool.name: tool for tool in tool_list}
+@tool
+def python_interpreter(code: str) -> str:
+    """Execute arbitrary Python code in the current environment and return stdout + repr of last expression (if any).
+    Use this to analyze data, create visualizations (e.g., matplotlib), or process files.
+    The code runs in the same Python process as the agent — use with caution.
+    """
+
+    logger.debug("tool: python interpreter")
+    code = code.replace("\\\\", "\\")
+    script_path = save_code(code, extension="py")
+
+    try:
+        result = subprocess.run(
+            [sys.executable, script_path],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        output = result.stdout
+        errors = result.stderr
+
+        if result.returncode != 0:
+            return f"{PYTHON_EXECUTION_ERROR_PREFIX}: {errors}"
+
+        if errors:
+            return f"{output}\nStderr: {errors}"
+
+        return output if output else "Code executed successfully (no output)"
+
+    except subprocess.TimeoutExpired:
+        return f"{PYTHON_EXECUTION_ERROR_PREFIX}: Execution timed out"
+    except Exception as e:
+        return f"{PYTHON_EXECUTION_ERROR_PREFIX}: {e}"
+
+
+def save_code(code: str, extension: str, custom_name="generated") -> str:
+    directory = "generated_code"
+    os.makedirs(directory, exist_ok=True)
+    file_path = os.path.join(directory, f"{custom_name}.{extension}")
+
+    if os.path.exists(file_path):
+        # Find all existing generated-N.py files
+        pattern = re.compile(rf"^{custom_name}-(\d+)\.{re.escape(extension)}$")
+        max_num = 0
+
+        for filename in os.listdir(directory):
+            match = pattern.match(filename)
+            if match:
+                num = int(match.group(1))
+                max_num = max(max_num, num)
+
+        new_filename = f"{custom_name}-{max_num + 1}.{extension}"
+        file_path = os.path.join(directory, new_filename)
+
+    with open(file_path, "w") as f:
+        f.write(code)
+    return file_path
