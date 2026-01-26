@@ -2,10 +2,10 @@ import json
 import numpy as np
 from pgvector.sqlalchemy import Vector
 import requests
-from sqlalchemy import Column, Float, String
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import Column, Float, String, select
+from sqlalchemy.orm import sessionmaker, Session
 from time import time
-from src.cache.postgres import Base, SCHEMA_NAME
+from src.cache.postgres import Base, SCHEMA_NAME, get_engine
 from src.logger import logger
 
 
@@ -28,13 +28,8 @@ def _embed_query(
     model: str,
     api_base: str,
 ) -> QueryEmbeddings:
-    response = requests.post(
-        f"{api_base}/api/embeddings", json={"model": model, "prompt": description}
-    )
-    response.raise_for_status()
-    embedding = response.json()["embedding"]
-    embedding_vector = np.array(embedding).tolist()
-    print(f"vector size {len(embedding_vector)}    {np.array(embedding).shape}")
+    text = f"Query name: {name}\nDescription: {description}\n\nCode:\n{query}"
+    embedding_vector = embed_text(text, model, api_base)
 
     return QueryEmbeddings(
         name=name,
@@ -78,3 +73,36 @@ def cache_queries(filepath: str, engine):
         result.append(embedding)
 
     _persist_embedded_queries(result, engine)
+
+
+def embed_text(
+    text: str,
+    model: str,
+    api_base: str,
+) -> list:
+    response = requests.post(
+        f"{api_base}/api/embeddings", json={"model": model, "prompt": text}
+    )
+    response.raise_for_status()
+    embedding = response.json()["embedding"]
+    embedding_vector = np.array(embedding)
+    normalized = embedding_vector / np.linalg.norm(embedding_vector)
+    return normalized.tolist()
+
+
+def top_k_lookup(user_question: str, k: int) -> list[QueryEmbeddings]:
+    query_embedding = embed_text(
+        user_question,
+        "hf.co/nomic-ai/nomic-embed-text-v1.5-GGUF:F32",
+        "http://192.168.178.82:11434",
+    )
+
+    with Session(get_engine()) as session:
+        stmt = (
+            select(QueryEmbeddings)
+            .order_by(QueryEmbeddings.embedding.cosine_distance(query_embedding))
+            .limit(k)
+        )
+        results = session.execute(stmt).scalars().all()
+
+    return list(results)
