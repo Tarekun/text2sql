@@ -1,7 +1,7 @@
 from langchain.messages import HumanMessage
 from src.agent.graph import Text2SqlAgent, llm_nodes, tool_nodes, llm_control_nodes
 from src.config import read_config, Config
-from src.db import gcp_pull_metadata, get_table_metadata
+from db.bigquery import gcp_pull_metadata, get_table_metadata
 from src.logger import configure_logger, logger
 from src.utils import print_graph
 import argparse
