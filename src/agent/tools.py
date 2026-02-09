@@ -10,10 +10,11 @@ import subprocess
 import sys
 from src.agent.llm_backend import instantiate_llm
 from src.config import read_config
-from src.db import run_sql_query, get_table_metadata
+from src.db.bigquery import run_sql_query, get_table_metadata
 from src.prompts.en import metadata_extraction
 from src.logger import logger
 from src.utils import content_as_string
+from src.cache.query_embedding import top_k_lookup
 
 
 SQL_EXECUTION_ERROR_PREFIX = "SQL execution error:"
@@ -112,6 +113,22 @@ def python_interpreter(code: str) -> str:
         return f"{PYTHON_EXECUTION_ERROR_PREFIX}: Execution timed out"
     except Exception as e:
         return f"{PYTHON_EXECUTION_ERROR_PREFIX}: {e}"
+
+
+@tool
+def queries_rag_lookup(query_search: str) -> str:
+    """Perform a top-k neighbours lookup on the QueryEmbeddings table to find relevant queries for the user question.
+    Returns a formatted string with the most similar queries and their descriptions."""
+    logger.debug("tool: RAG queries lookup")
+    cached_queries = top_k_lookup(query_search, 1)
+    result = ""
+    for query in cached_queries:
+        result += f"Query name: {query.name}\n"
+        result += f"Description: {query.description}\n"
+        result += f"Code:\n```sql{query.query}```\n"
+        result += "\n\n"
+
+    return result
 
 
 def save_code(code: str, extension: str, custom_name="generated") -> str:

@@ -1,4 +1,4 @@
-from langchain.messages import AnyMessage
+from langchain.messages import AnyMessage, ToolMessage
 from langgraph.graph.state import CompiledStateGraph
 from src.logger import logger
 
@@ -19,6 +19,9 @@ def content_as_string(message: AnyMessage) -> str:
     """Takes a langchain message and returns the content string"""
 
     content = message.content
+    # if isinstance(message, ToolMessage):
+    #     print("tool message found here it is:")
+    #     print(message)
     if isinstance(content, list):
         content = ""
         for block in content:

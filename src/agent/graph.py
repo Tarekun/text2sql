@@ -95,12 +95,14 @@ class Text2SqlAgent:
         user_query = get_user_question(state)
         metadata = state.get("metadata", "No metadata fetched yet")
         data = state.get("fetched_data", "No rows fetched yet")
+        topk_queries = state.get("topk_queries", "No query lookup performed yet")
         system_prompt = self.local_prompts.sql_generation.format(
             metadata=metadata,
             data=data,
             db_kind="BigQuery",
+            topk_queries=topk_queries,
         )
-        llm = self.llm.bind_tools([execute_sql, fetch_metadata])
+        llm = self.llm.bind_tools([execute_sql, fetch_metadata, queries_rag_lookup])
         return retryable_generation(
             state,
             llm_with_tools=llm,
@@ -142,6 +144,7 @@ class Text2SqlAgent:
             "retry_count": retry,
             "metadata": get_fetched_metadata(state),
             "fetched_data": get_fetched_data(state),
+            "topk_queries": get_topk_queries(state),
         }
 
     def _node_post_python_tool(self, state: MessagesState):
