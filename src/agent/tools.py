@@ -58,6 +58,7 @@ def execute_sql(query: str, meaningful_filename: str) -> str:
         return f"{SQL_EXECUTION_ERROR_PREFIX} {str(e)}"
 
 
+# TODO: find a way to not have the model generate the `user_question` input
 @tool
 def fetch_metadata(user_question: str) -> str:
     """Fetch metadata about possibly relevant tables to the `user_question`"""
@@ -153,3 +154,6 @@ def save_code(code: str, extension: str, custom_name="generated") -> str:
     with open(file_path, "w") as f:
         f.write(code)
     return file_path
+
+
+all_tools = [fetch_metadata, queries_rag_lookup, execute_sql, python_interpreter]
