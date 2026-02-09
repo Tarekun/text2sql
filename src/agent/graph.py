@@ -6,7 +6,6 @@ from langchain.messages import (
     HumanMessage,
 )
 from langgraph.prebuilt import ToolNode
-from typing import Callable
 from src.agent.llm_backend import instantiate_llm
 from src.agent.state import *
 from src.agent.tools import *
@@ -81,10 +80,10 @@ class Text2SqlAgent:
         # base prompt construction
         llm = self.llm.bind_tools(all_tools)
         user_query = get_user_question(state)
-        metadata = state.get("metadata", "No metadata fetched yet")
-        data = state.get("fetched_data", "No rows fetched yet")
-        topk_queries = state.get("topk_queries", "No query lookup performed yet")
-        python_output = state.get("python_output", "No previous python executions")
+        metadata = state.get("metadata") or "No metadata fetched yet"
+        data = state.get("fetched_data") or "No rows fetched yet"
+        topk_queries = state.get("topk_queries") or "No query lookup performed yet"
+        python_output = state.get("python_output") or "No previous python executions"
         system_prompt = self.local_prompts.sql_generation.format(
             metadata=metadata,
             data=data,
@@ -148,9 +147,9 @@ class Text2SqlAgent:
     def _node_final_answer(self, state: MessagesState):
         logger.debug("node: final answer")
         user_query = get_user_question(state)
-        metadata = state.get("metadata", "No metadata fetched yet")
-        sql_result = state.get("fetched_data", "No rows fetched yet")
-        python_output = state.get("python_output", "No previous python executions")
+        metadata = state.get("metadata") or "No metadata fetched yet"
+        sql_result = state.get("fetched_data") or "No rows fetched yet"
+        python_output = state.get("python_output") or "No previous python executions"
 
         if sql_result is None:
             logger.debug("Final answer has no SQL data available")
