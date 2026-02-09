@@ -17,22 +17,19 @@ def get_user_question(state) -> str:
 
 def content_as_string(message: AnyMessage) -> str:
     """Takes a langchain message and returns the content string"""
-
     content = message.content
-    # if isinstance(message, ToolMessage):
-    #     print("tool message found here it is:")
-    #     print(message)
     if isinstance(content, list):
-        content = ""
+        str_content = ""
         for block in content:
             if isinstance(block, dict):
-                content += block["text"]
+                str_content += block["text"]
             elif isinstance(block, str):
-                content += block
+                str_content += block
             else:
                 logger.error(
                     f"Couldn't handle message content block of type {type(block)}. Value is {block}"
                 )
+        content = str_content
 
     elif isinstance(content, dict):
         content = message.content["text"]  # type:ignore

@@ -114,7 +114,12 @@ def python_interpreter(code: str) -> str:
         if errors:
             return f"{output}\nStderr: {errors}"
 
-        return output if output else "Code executed successfully (no output)"
+        # return output if output else "Code executed successfully (no output)"
+        return (
+            output
+            if output
+            else "Python code terminated successfully accomplishing the task with no output"
+        )
 
     except subprocess.TimeoutExpired:
         return f"{PYTHON_EXECUTION_ERROR_PREFIX}: Execution timed out"
