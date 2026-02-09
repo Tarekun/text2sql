@@ -14,15 +14,33 @@ from src.config import Config
 _lock = threading.Lock()
 
 
-# BaseChatModel is abstract and requires implementing _generate
-# for the time being im only extending ChatGoogleGenerativeAI
-class LoggedChatModel(ChatGoogleGenerativeAI):
-    def __init__(self, inner_llm: BaseChatModel):
-        self._inner_llm = inner_llm
+class ChatTrace:
+    def __init__(self):
         self._log_path = "./logs/llm_calls.log"
         self._call_index = 0
         with open(self._log_path, "w", encoding="utf-8") as f:
             f.write("Last execution LLM convo trail\n")
+
+    def write_record(self, record: dict):
+        with _lock:
+            self._call_index += 1
+            with open(self._log_path, "a", encoding="utf-8") as f:
+                f.write("=" * 50 + "\n")
+                f.write(f"Call N {self._call_index} at {record['timestamp']}\n")
+                f.write("=" * 50 + "\n")
+                f.write(f"{record['prompt']}\n\n")
+                f.write("Model response:\n")
+                f.write(f"{record.get('response',{}).get('content','')}")
+                f.write(f"{record.get('exception', '')}")
+                f.write("\n\n\n\n")
+
+
+# BaseChatModel is abstract and requires implementing _generate
+# for the time being im only extending ChatGoogleGenerativeAI
+class LoggedChatModel(ChatGoogleGenerativeAI):
+    def __init__(self, inner_llm: BaseChatModel, chat_trace: ChatTrace):
+        self._inner_llm = inner_llm
+        self._chat_trace = chat_trace
 
     @property
     def _llm_type(self) -> str:
@@ -46,7 +64,7 @@ class LoggedChatModel(ChatGoogleGenerativeAI):
                 elif isinstance(m, BaseMessage):
                     content += str(m.content)
             return content
-        return "suka"
+        return ""
 
     def invoke(
         self,
@@ -57,12 +75,7 @@ class LoggedChatModel(ChatGoogleGenerativeAI):
         **kwargs: Any,
     ) -> AIMessage:
         messages = input
-        with _lock:
-            self._call_index += 1
-            call_number = self._call_index
-
         record = {
-            "call_number": call_number,
             "timestamp": datetime.now().isoformat(),
             "prompt": self._prompt_from_messages(messages),
             "stop": stop,
@@ -90,29 +103,24 @@ class LoggedChatModel(ChatGoogleGenerativeAI):
             raise
 
         finally:
-            self._write_record(record)
+            self._chat_trace.write_record(record)
 
-    def _write_record(self, record: dict):
-        # print(record)
-        with _lock:
-            with open(self._log_path, "a", encoding="utf-8") as f:
-                f.write("=" * 50 + "\n")
-                f.write(f"Call N {record['call_number']} at {record['timestamp']}\n")
-                f.write("=" * 50 + "\n")
-                f.write(f"{record['prompt']}\n\n")
-                f.write("Model response:\n")
-                f.write(f"{record.get('response',{}).get('content','')}")
-                f.write(f"{record.get('exception', '')}")
-                f.write("\n\n\n\n")
+
+run_trace = None
 
 
 def instantiate_llm(config: Config) -> ChatGoogleGenerativeAI:
+    global run_trace
+    if run_trace is None:
+        run_trace = ChatTrace()
+
     model = LoggedChatModel(
         ChatGoogleGenerativeAI(
             model=config.model_name,
             temperature=config.model_settings.temperature,
             project=config.gcp_project,
-        )
+        ),
+        chat_trace=run_trace,
     )
 
     return model
