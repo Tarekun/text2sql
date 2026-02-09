@@ -65,10 +65,15 @@ def fetch_metadata(user_question: str) -> str:
     """Fetch metadata about possibly relevant tables to the `user_question`"""
     logger.debug("tool: fetch metadata")
     metadata = get_table_metadata()
-    if len(metadata) > 5000:
+    # TODO: find a better way to make the config available here
+    config = read_config()
+    if config.rerank_metadata and len(metadata) > 5000:
         logger.debug("raw metadata too long, calling LLM to parse it")
-        config = read_config()
-        llm = instantiate_llm(config)
+        llm = instantiate_llm(
+            gcp_project=config.gcp_project,
+            model_name=config.rerank_model.name,
+            temperature=config.rerank_model.temperature,
+        )
         response = llm.invoke(
             [
                 SystemMessage(content=metadata_extraction),

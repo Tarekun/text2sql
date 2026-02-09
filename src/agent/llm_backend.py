@@ -109,16 +109,18 @@ class LoggedChatModel(ChatGoogleGenerativeAI):
 run_trace = None
 
 
-def instantiate_llm(config: Config) -> ChatGoogleGenerativeAI:
+def instantiate_llm(
+    gcp_project: str, model_name: str, temperature: float
+) -> ChatGoogleGenerativeAI:
     global run_trace
     if run_trace is None:
         run_trace = ChatTrace()
 
     model = LoggedChatModel(
         ChatGoogleGenerativeAI(
-            model=config.model_name,
-            temperature=config.model_settings.temperature,
-            project=config.gcp_project,
+            model=model_name,
+            temperature=temperature,
+            project=gcp_project,
         ),
         chat_trace=run_trace,
     )

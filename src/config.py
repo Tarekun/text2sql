@@ -6,6 +6,7 @@ import yaml
 
 @dataclass
 class ModelSettings:
+    name: str
     temperature: float = 0.8
     # top_k: Optional[int] = None
     # top_p: Optional[int] = None
@@ -14,15 +15,16 @@ class ModelSettings:
 @dataclass
 class Config:
     language: str
-    model_name: str
+    main_model: ModelSettings
+    rerank_model: ModelSettings
+    answer_model: ModelSettings
     gcp_project: str
-    provider: str
-    model_settings: ModelSettings
     max_retries: int = 5
     log_level: str = "INFO"
     embed_metadata: bool = False
     embedding_api_base: str = ""
     embedding_model: str = ""
+    rerank_metadata: bool = True
 
 
 parser = argparse.ArgumentParser(
@@ -34,7 +36,7 @@ parser.add_argument(
 # Add command line arguments that can override config values
 parser.add_argument("--language", type=str, help="Language for the agent")
 parser.add_argument("--max_retries", type=int, help="Maximum number of retries")
-parser.add_argument("--model_name", type=str, help="Model name to use")
+parser.add_argument("--main_model_name", type=str, help="Model name to use")
 parser.add_argument("--gcp_project", type=str, help="GCP project ID")
 parser.add_argument("--provider", type=str, help="LLM inference API provider name")
 parser.add_argument("--log_level", type=str, help="Logging level")
@@ -57,6 +59,21 @@ parser.add_argument("--temperature", type=float, help="Temperature for model sam
 parser.add_argument(
     "--question", type=str, help="Question to ask the agent (single query mode)"
 )
+parser.add_argument(
+    "--rerank_metadata",
+    type=bool,
+    help="Wether to call an LLM to prune metadata if it's too long or not",
+)
+parser.add_argument(
+    "--rerank_model_name",
+    type=str,
+    help="Model identifier for the reranker model pruning metadata",
+)
+parser.add_argument(
+    "--answer_model_name",
+    type=str,
+    help="Model identifier for the model generating the final answer",
+)
 
 args = parser.parse_args()
 
@@ -68,25 +85,39 @@ def get_args_parser():
 
 def _parse_config_file(filepath: str = "config.yml") -> Config:
     """Reads the YAML config file into a dictionary and returns it"""
+
+    def _get_model_settings(model_settings_key: str) -> ModelSettings | None:
+        try:
+            settings = config.pop(model_settings_key)
+            return ModelSettings(**settings)
+        except KeyError:
+            return None
+
     with open(filepath, "r") as file:
         config = yaml.safe_load(file)
 
     # Check for missing required fields
     required_fields = [
         "language",
-        "model_name",
+        "main_model",
         "gcp_project",
-        "provider",
-        "model_settings",
     ]
     for field in required_fields:
         if field not in config:
             raise ValueError(f"Missing required configuration field: {field}")
 
-    model_settings_dict = config.pop("model_settings")
-    model_settings = ModelSettings(**model_settings_dict)
+    main_model_settings: ModelSettings = _get_model_settings(
+        "main_model"
+    )  # type: ignore
+    rerank_settings = _get_model_settings("rerank_model") or main_model_settings
+    answer_settings = _get_model_settings("answer_model") or main_model_settings
 
-    return Config(**config, model_settings=model_settings)
+    return Config(
+        **config,
+        main_model=main_model_settings,
+        rerank_model=rerank_settings,
+        answer_model=answer_settings,
+    )
 
 
 def _override_config_with_args(config: Config, args: argparse.Namespace) -> Config:
@@ -95,14 +126,17 @@ def _override_config_with_args(config: Config, args: argparse.Namespace) -> Conf
     arg_to_config = {
         "language": "language",
         "max_retries": "max_retries",
-        "model_name": "model_name",
+        "main_model_name": "main_model.name",
+        "temperature": "main_model.temperature",
         "gcp_project": "gcp_project",
         "provider": "provider",
         "log_level": "log_level",
         "embed_metadata": "embed_metadata",
         "embedding_api_base": "embedding_api_base",
         "embedding_model": "embedding_model",
-        "temperature": "model_settings.temperature",
+        "rerank_metadata": "rerank_metadata",
+        "rerank_model_name": "rerank_model.name",
+        "answer_model_name": "answer_model.name",
     }
 
     config_copy = config.__dict__.copy()
