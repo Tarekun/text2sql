@@ -4,6 +4,9 @@ model_name: gemini-2.5-flash
 gcp_project: soges-group-data-platform
 provider: CURRENTLY_UNUSED
 log_level: INFO
+embed_metadata: True
+embedding_api_base: http://192.168.178.82:11434
+embedding_model: hf.co/nomic-ai/nomic-embed-text-v1.5-GGUF:F32
 model_settings:
   temperature: 0.0
   # top_k: 20

@@ -1,9 +1,12 @@
-from sqlalchemy import Column, Float, Integer, String, JSON, PrimaryKeyConstraint
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import Column, Integer, String, JSON, PrimaryKeyConstraint
 from sqlalchemy.orm import Session
 import yaml
+from src.cache.embeddings import embed_text
 from src.cache.postgres import Base, SCHEMA_NAME, get_engine
 from src.config import Config
 from src.db.bigquery import gcp_pull_metadata
+from src.logger import logger
 
 
 class DbMetadata(Base):
@@ -20,6 +23,7 @@ class DbMetadata(Base):
     table_rows = Column(Integer)
     # JSON array of objects with keys: name, type, description
     columns = Column(JSON)
+    embedding = Column(Vector(768), nullable=True)
 
 
 def cache_all_metadata(config: Config):
@@ -38,11 +42,11 @@ def cache_all_metadata(config: Config):
                 table_name = table.get("name")
                 table_description = table.get("description", "")
                 table_kind = table.get("kind", "table")
+                table_type = table_kind.upper()
                 # Extract table statistics
                 others = table.get("others", {})
                 table_bytes = others.get("num_bytes")
                 table_rows = others.get("num_rows")
-                table_type = others.get("table_type", table_kind.upper())
                 # Extract columns as JSON-compatible list
                 columns_data = []
                 for column in table.get("columns", []):
@@ -54,6 +58,21 @@ def cache_all_metadata(config: Config):
                         }
                     )
 
+                embedding = None
+                if config.embed_metadata:
+                    schema = ",\n".join(
+                        [
+                            f"{c['name']} : {c['type']} ({c['description']})"
+                            for c in columns_data
+                        ]
+                    )
+                    table_text = f"Entity({table_type}) {dataset_name}.{table_name}\nDescription: {table_description}\nSchema:{schema}"
+                    embedding = embed_text(
+                        table_text,
+                        model=config.embedding_model,
+                        api_base=config.embedding_api_base,
+                    )
+
                 db_metadata = DbMetadata(
                     dataset=dataset_name,
                     dataset_description=dataset_description,
@@ -63,10 +82,13 @@ def cache_all_metadata(config: Config):
                     table_bytes=table_bytes,
                     table_rows=table_rows,
                     columns=columns_data,
+                    embedding=embedding,
                 )
                 session.add(db_metadata)
 
         session.commit()
+
+    logger.debug("Fully dumped database metadata")
 
 
 def get_table_metadata() -> str:
