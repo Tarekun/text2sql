@@ -36,7 +36,11 @@ class Text2SqlAgent:
     def __init__(self, config: Config):
         self.max_retries = config.max_retries
         self.local_prompts = prompts[config.language]
-        self.llm = instantiate_llm(config)
+        self.llm = instantiate_llm(
+            gcp_project=config.gcp_project,
+            model_name=config.main_model.name,
+            temperature=config.main_model.temperature,
+        )
 
         # Build workflow
         agent_builder = StateGraph(state_schema=MessagesState)
@@ -77,13 +81,14 @@ class Text2SqlAgent:
                 ],
             }
 
-        # base prompt construction
         # Filter out fetch_metadata tool if metadata has already been fetched
         available_tools = all_tools
         if state.get("metadata") is not None:
-            available_tools = [tool for tool in all_tools if tool.name != "fetch_metadata"]
-            logger.debug("Metadata already fetched, removing fetch_metadata from available tools")
+            available_tools = [
+                tool for tool in all_tools if tool.name != "fetch_metadata"
+            ]
 
+        # base prompt construction
         llm = self.llm.bind_tools(available_tools)
         user_query = get_user_question(state)
         metadata = state.get("metadata") or "No metadata fetched yet"
