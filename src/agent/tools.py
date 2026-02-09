@@ -9,8 +9,9 @@ import re
 import subprocess
 import sys
 from src.agent.llm_backend import instantiate_llm
+from src.cache.metadata import get_table_metadata
 from src.config import read_config
-from src.db.bigquery import run_sql_query, get_table_metadata
+from src.db.bigquery import run_sql_query
 from src.prompts.en import metadata_extraction
 from src.logger import logger
 from src.utils import content_as_string
