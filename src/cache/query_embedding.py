@@ -5,7 +5,9 @@ import requests
 from sqlalchemy import Column, Float, String, select
 from sqlalchemy.orm import sessionmaker, Session
 from time import time
+from src.cache.embeddings import embed_text
 from src.cache.postgres import Base, SCHEMA_NAME, get_engine
+from src.config import Config
 from src.logger import logger
 
 
@@ -55,7 +57,7 @@ def _persist_embedded_queries(queries: list[QueryEmbeddings], engine):
         session.close()
 
 
-def cache_queries(filepath: str, engine):
+def cache_queries(config: Config, filepath: str, engine):
     with open(filepath, "r") as f:
         content = f.read()
     queries_data: list[dict] = json.loads(content)
@@ -66,35 +68,21 @@ def cache_queries(filepath: str, engine):
             name=query["name"],
             description=query["description"],
             query=query["query"],
-            model="hf.co/nomic-ai/nomic-embed-text-v1.5-GGUF:F32",
-            # model="qwen3-embedding:8b",
-            api_base="http://192.168.178.82:11434",
+            model=config.embedding_model,
+            api_base=config.embedding_api_base,
         )
         result.append(embedding)
 
     _persist_embedded_queries(result, engine)
 
 
-def embed_text(
-    text: str,
-    model: str,
-    api_base: str,
-) -> list:
-    response = requests.post(
-        f"{api_base}/api/embeddings", json={"model": model, "prompt": text}
-    )
-    response.raise_for_status()
-    embedding = response.json()["embedding"]
-    embedding_vector = np.array(embedding)
-    normalized = embedding_vector / np.linalg.norm(embedding_vector)
-    return normalized.tolist()
-
-
-def top_k_lookup(user_question: str, k: int) -> list[QueryEmbeddings]:
+def top_k_lookup(
+    user_question: str, k: int, model: str, api_base: str
+) -> list[QueryEmbeddings]:
     query_embedding = embed_text(
         user_question,
-        "hf.co/nomic-ai/nomic-embed-text-v1.5-GGUF:F32",
-        "http://192.168.178.82:11434",
+        model,
+        api_base,
     )
 
     with Session(get_engine()) as session:

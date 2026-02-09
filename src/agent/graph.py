@@ -78,7 +78,13 @@ class Text2SqlAgent:
             }
 
         # base prompt construction
-        llm = self.llm.bind_tools(all_tools)
+        # Filter out fetch_metadata tool if metadata has already been fetched
+        available_tools = all_tools
+        if state.get("metadata") is not None:
+            available_tools = [tool for tool in all_tools if tool.name != "fetch_metadata"]
+            logger.debug("Metadata already fetched, removing fetch_metadata from available tools")
+
+        llm = self.llm.bind_tools(available_tools)
         user_query = get_user_question(state)
         metadata = state.get("metadata") or "No metadata fetched yet"
         data = state.get("fetched_data") or "No rows fetched yet"

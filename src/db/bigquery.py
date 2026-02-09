@@ -32,14 +32,32 @@ def run_sql_query(query: str) -> list[Row]:
     return list(result), result.schema  # type:ignore
 
 
-def gcp_pull_metadata(project_id: str, datasets: list[str] | None = None) -> None:
+def gcp_pull_metadata(project_id: str, datasets: list[str] | None = None) -> list[dict]:
     """
     Fetches BigQuery metadata from GCP project and saves it to a YAML file.
 
     Args:
         project_id: GCP project ID
         datasets: list of dataset names to pull, if unspecified all datasets will be pulled
+    Returns:
+        A list of nested dictionaries containing metadata. The first level corresponds to datasets and contains:
+        * name: name of the dataset
+        * description: the description of the dataset available on BigQuery
+        * others: other metadata found we dont currently have a use for
+        * tables: list of dicts with metadata about tables in this dataset
+
+        The second level corresponds to tables and contains keys:
+        * name: name of the table
+        * description: the description of the table available on BigQuery
+        * others: other metadata found we dont currently have a use for
+        * columns: list of dicts with metadata about columns of this table
+
+        The third level corresponds to columns of tables and contains keys:
+        * name: name of the column
+        * description: the description of the column available on BigQuery
+        * type: the data type of the column
     """
+
     client = bigquery.Client(project=project_id)
     metadata = []
 
@@ -80,8 +98,7 @@ def gcp_pull_metadata(project_id: str, datasets: list[str] | None = None) -> Non
 
         metadata.append(dataset_info)
 
-    with open("schema.yaml", "w") as f:
-        yaml.dump(metadata, f, default_flow_style=False, sort_keys=False)
+    return metadata
 
 
 def _extract_other_metadata(resource) -> dict:
@@ -107,35 +124,3 @@ def _extract_other_metadata(resource) -> dict:
                 # Skip attributes that can't be accessed
                 pass
     return others
-
-
-def get_table_metadata():
-    with open("schema.yaml", "r") as f:
-        yaml_str = f.read()
-        datasets = yaml.safe_load(yaml_str)
-
-    if not datasets:
-        return "No datasets found in schema file."
-
-    schema_str = ""
-    for dataset in datasets:
-        dataset_name = dataset["name"]
-
-        for table in dataset.get("tables", []):
-            full_table_name = f"{dataset_name}.{table['name']}"
-            table_desc = table.get("description", "(Description not available)")
-            schema_str += f"Table: {full_table_name}\n"
-            schema_str += f"\tDescription: {table_desc}\n"
-            schema_str += f"\tByte usage: {table['others']['num_bytes']}\n"
-            schema_str += "\tColumns:\n"
-
-            for column in table.get("columns", []):
-                col_name = column["name"]
-                col_type = column["type"]
-                col_desc = column.get("description", "(Description not available)")
-                schema_str += f"\t\t{col_name}:{col_type} {col_desc}\n"
-
-            schema_str += "\n"
-
-    # return schema_str
-    return yaml_str

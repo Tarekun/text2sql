@@ -9,8 +9,9 @@ import re
 import subprocess
 import sys
 from src.agent.llm_backend import instantiate_llm
+from src.cache.metadata import get_table_metadata
 from src.config import read_config
-from src.db.bigquery import run_sql_query, get_table_metadata
+from src.db.bigquery import run_sql_query
 from src.prompts.en import metadata_extraction
 from src.logger import logger
 from src.utils import content_as_string
@@ -66,7 +67,7 @@ def fetch_metadata(user_question: str) -> str:
     metadata = get_table_metadata()
     if len(metadata) > 5000:
         logger.debug("raw metadata too long, calling LLM to parse it")
-        config = read_config("./config.yml")
+        config = read_config()
         llm = instantiate_llm(config)
         response = llm.invoke(
             [
@@ -121,7 +122,14 @@ def queries_rag_lookup(query_search: str) -> str:
     """Perform a top-k neighbours lookup on the QueryEmbeddings table to find relevant queries for the user question.
     Returns a formatted string with the most similar queries and their descriptions."""
     logger.debug("tool: RAG queries lookup")
-    cached_queries = top_k_lookup(query_search, 1)
+    # TODO: find a better way to make the config available here
+    config = read_config()
+    cached_queries = top_k_lookup(
+        query_search,
+        k=1,
+        model=config.embedding_model,
+        api_base=config.embedding_api_base,
+    )
     result = ""
     for query in cached_queries:
         result += f"Query name: {query.name}\n"
