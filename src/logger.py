@@ -8,6 +8,7 @@ _initialized = False
 
 def configure_logger(config: Config):
     global _initialized
+    log_level = config.log_level.upper()
 
     if not _initialized:
         # log_format = "{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}"
@@ -16,7 +17,7 @@ def configure_logger(config: Config):
 
         logger.add(
             sys.stderr,
-            level=config.log_level,
+            level=log_level,
             # format=log_format,
             colorize=True,  # Enable colors in terminal
             diagnose=True,
@@ -25,7 +26,7 @@ def configure_logger(config: Config):
             "logs/out.log",
             rotation="500 MB",
             # retention="10 days",
-            level=config.log_level,
+            level=log_level,
             # format=log_format,
             # compression="zip",  # Compress rotated files
             # enqueue=True,  # Async-safe (for multi-threading)
