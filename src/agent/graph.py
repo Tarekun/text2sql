@@ -15,12 +15,12 @@ from src.utils import get_user_question, content_as_string
 from src.logger import logger
 
 
-NODE_GENERATE_NAME = "data_fetching"
+NODE_TOOL_USE_NAME = "data_fetching"
 NODE_ANSWER_NAME = "answer"
 NODE_TOOLS_NAME = "tools"
 NODE_POST_TOOL_NAME = "tool_state_mngt"
 llm_control_nodes = [
-    NODE_GENERATE_NAME,
+    NODE_TOOL_USE_NAME,
 ]
 llm_nodes = [
     NODE_ANSWER_NAME,
@@ -42,23 +42,23 @@ class Text2SqlAgent:
         agent_builder = StateGraph(state_schema=MessagesState)
 
         # Add nodes
-        agent_builder.add_node(NODE_GENERATE_NAME, self._node_generate_sql)
+        agent_builder.add_node(NODE_TOOL_USE_NAME, self._node_tool_usage)
         agent_builder.add_node(
             NODE_TOOLS_NAME,
             ToolNode(all_tools),
         )
-        agent_builder.add_node(NODE_POST_TOOL_NAME, self._node_post_data_tool)
+        agent_builder.add_node(NODE_POST_TOOL_NAME, self._node_post_tool_state_mngt)
         agent_builder.add_node(NODE_ANSWER_NAME, self._node_final_answer)
 
         # Add edges to connect nodes
-        agent_builder.add_edge(START, NODE_GENERATE_NAME)
+        agent_builder.add_edge(START, NODE_TOOL_USE_NAME)
         agent_builder.add_conditional_edges(
-            NODE_GENERATE_NAME,
+            NODE_TOOL_USE_NAME,
             self._edge_skip_execution,
             [NODE_TOOLS_NAME, NODE_ANSWER_NAME],
         )
         agent_builder.add_edge(NODE_TOOLS_NAME, NODE_POST_TOOL_NAME)
-        agent_builder.add_edge(NODE_POST_TOOL_NAME, NODE_GENERATE_NAME)
+        agent_builder.add_edge(NODE_POST_TOOL_NAME, NODE_TOOL_USE_NAME)
         agent_builder.add_edge(NODE_ANSWER_NAME, END)
 
         self.graph: CompiledStateGraph = agent_builder.compile()
@@ -67,7 +67,7 @@ class Text2SqlAgent:
         messages = self.graph.invoke({"messages": [HumanMessage(content=message)]})
         return content_as_string(messages["messages"][-1])
 
-    def _node_generate_sql(self, state: MessagesState):
+    def _node_tool_usage(self, state: MessagesState):
         logger.debug("node: main control node")
         if state.get("retry_count", 0) > self.max_retries:
             logger.error("Tool usage failed too many times. Skipping")
@@ -126,7 +126,7 @@ class Text2SqlAgent:
             "messages": [response],
         }
 
-    def _node_post_data_tool(self, state: MessagesState):
+    def _node_post_tool_state_mngt(self, state: MessagesState):
         logger.debug("node: post tool state management")
         retry = 0
         if did_last_sql_run_fail(state):
