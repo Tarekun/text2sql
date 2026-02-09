@@ -131,10 +131,10 @@ class Text2SqlAgent:
         retry = 0
         if did_last_sql_run_fail(state):
             logger.warning("SQL execution failed, retrying")
-            retry = state.get("retry_count", 0) + 1
+            retry = (state.get("retry_count") or 0) + 1
         if did_last_python_run_fail(state):
             logger.warning("Python execution failed, retrying")
-            retry = state.get("retry_count", 0) + 1
+            retry = (state.get("retry_count") or 0) + 1
 
         return {
             "retry_count": retry,
