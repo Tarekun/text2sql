@@ -14,6 +14,7 @@ class MessagesState(TypedDict):
     retry_count: int
     sufficient_context: bool
     python_output: str
+    topk_queries: str
 
 
 def did_last_sql_run_fail(state: MessagesState) -> bool:
@@ -44,6 +45,12 @@ def get_python_output(state: MessagesState) -> str | None:
     """Returns the string collected from std output of the latest execution of python code
     by the `python_interpreter` tool if it was run before, `None` otherwise"""
     return _get_tool_output_as_string(state, "python_interpreter")
+
+
+def get_topk_queries(state: MessagesState) -> str | None:
+    """Returns the string collected from std output of the latest execution of python code
+    by the `python_interpreter` tool if it was run before, `None` otherwise"""
+    return _get_tool_output_as_string(state, "queries_rag_lookup")
 
 
 def _get_tool_output_as_string(state: MessagesState, tool_name: str) -> str | None:

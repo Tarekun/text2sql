@@ -116,10 +116,11 @@ def python_interpreter(code: str) -> str:
 
 
 @tool
-def queries_rag_lookup(user_question: str, k: int = 5) -> str:
+def queries_rag_lookup(query_search: str) -> str:
     """Perform a top-k neighbours lookup on the QueryEmbeddings table to find relevant queries for the user question.
     Returns a formatted string with the most similar queries and their descriptions."""
-    cached_queries = top_k_lookup(user_question, 5)
+    logger.debug("tool: RAG queries lookup")
+    cached_queries = top_k_lookup(query_search, 1)
     result = ""
     for query in cached_queries:
         result += f"Query name: {query.name}\n"
@@ -152,7 +153,3 @@ def save_code(code: str, extension: str, custom_name="generated") -> str:
     with open(file_path, "w") as f:
         f.write(code)
     return file_path
-
-
-tool_list = [execute_sql, fetch_metadata, queries_rag_lookup]
-tools_dict = {tool.name: tool for tool in tool_list}
